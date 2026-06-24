@@ -1,0 +1,42 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* SignBridge Brand Palette */
+  --color-brand-bg: #ffffff;
+  --color-brand-border: #eceef0;
+  --color-brand-border-high: #d8dadc;
+  --color-brand-text: #191c1e;
+  --color-brand-text-muted: #464554;
+  --color-brand-surface: #ffffff;
+  --color-brand-surface-container: #eceef0;
+  --color-brand-primary: #4648d4;
+  --color-brand-primary-hover: #383abd;
+  --color-brand-primary-light: #e1e0ff;
+  --color-brand-secondary: #006c49;
+  --color-brand-secondary-hover: #005236;
+  --color-brand-secondary-light: #6ffbbe;
+  --color-brand-error: #ba1a1a;
+  --color-brand-error-light: #ffdad6;
+}
+
+body {
+  background-color: var(--color-brand-bg);
+  color: var(--color-brand-text);
+  font-family: var(--font-sans);
+}
+
+.bg-dot-grid {
+  background-image: none !important;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+

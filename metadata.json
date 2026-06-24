@@ -1,0 +1,11 @@
+{
+  "name": "SignBridge",
+  "description": "Ứng dụng kết nối giao tiếp và phiên dịch ngôn ngữ ký hiệu thời gian thực hỗ trợ người khiếm thính.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
