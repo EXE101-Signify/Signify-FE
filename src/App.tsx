@@ -1,26 +1,30 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Screen, Contact } from './types';
-import LandingPage from './components/LandingPage';
+import { useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
-import VideoCall from './components/VideoCall';
+import LandingPage from './components/LandingPage';
 import LanguagePacks from './components/LanguagePacks';
+import VideoCall from './components/VideoCall';
+
+import type { Contact, Screen } from './types';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('landing');
-  const [activeCallContact, setActiveCallContact] = useState<Contact | null>(null);
+  const [currentScreen, setCurrentScreen] =
+    useState<Screen>('landing');
 
-  // Authentication callbacks
+  const [activeCallContact, setActiveCallContact] =
+    useState<Contact | null>(null);
+
   const handleLoginSuccess = () => {
     setCurrentScreen('dashboard');
   };
 
   const handleLogout = () => {
+    setActiveCallContact(null);
     setCurrentScreen('landing');
   };
 
-  // Live video calling gateways
   const handleStartCall = (contact: Contact) => {
     setActiveCallContact(contact);
     setCurrentScreen('call');
@@ -32,7 +36,10 @@ export default function App() {
   };
 
   return (
-    <div id="applet-viewport-root" className="min-h-screen bg-brand-bg overflow-x-hidden select-none">
+    <div
+      id="applet-viewport-root"
+      className="min-h-screen overflow-x-hidden bg-brand-bg"
+    >
       <AnimatePresence mode="wait">
         {currentScreen === 'landing' && (
           <motion.div
@@ -54,9 +61,9 @@ export default function App() {
             exit={{ opacity: 0, y: -15 }}
             transition={{ duration: 0.2 }}
           >
-            <AuthPage 
-              onNavigate={setCurrentScreen} 
-              onLoginSuccess={handleLoginSuccess} 
+            <AuthPage
+              onNavigate={setCurrentScreen}
+              onLoginSuccess={handleLoginSuccess}
             />
           </motion.div>
         )}
@@ -69,8 +76,8 @@ export default function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
           >
-            <Dashboard 
-              onNavigate={setCurrentScreen} 
+            <Dashboard
+              onNavigate={setCurrentScreen}
               onLogout={handleLogout}
               onStartCall={handleStartCall}
             />
@@ -85,9 +92,9 @@ export default function App() {
             exit={{ opacity: 0, scale: 1.02 }}
             transition={{ duration: 0.25 }}
           >
-            <VideoCall 
-              contact={activeCallContact} 
-              onEndCall={handleEndCall} 
+            <VideoCall
+              contact={activeCallContact}
+              onEndCall={handleEndCall}
             />
           </motion.div>
         )}
