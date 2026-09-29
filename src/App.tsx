@@ -1,14 +1,24 @@
 import { useState } from 'react';
-import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { Home, ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Home } from 'lucide-react';
 
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
 import LandingPage from './components/LandingPage';
 import LanguagePacks from './components/LanguagePacks';
 import VideoCall from './components/VideoCall';
-import { Button, BrandLogo } from './components/common';
+import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
+import RegisterPage from './components/auth/RegisterPage';
+import ResetPasswordPage from './components/auth/ResetPasswordPage';
+import VerifyOtpPage from './components/auth/VerifyOtpPage';
+import { BrandLogo, Button } from './components/common';
 
 import type { Contact, Screen } from './types';
 
@@ -20,16 +30,20 @@ function NotFoundPage() {
       <div className="mb-6">
         <BrandLogo />
       </div>
+
       <div className="max-w-md rounded-2xl border border-brand-border bg-white p-8 shadow-sm">
         <span className="inline-block rounded-full bg-brand-primary-light px-3 py-1 text-xs font-bold text-brand-primary">
           404 Not Found
         </span>
+
         <h1 className="mt-4 text-2xl font-extrabold text-brand-text">
           Trang không tồn tại
         </h1>
+
         <p className="mt-2 text-sm text-brand-text-muted">
           Đường dẫn bạn truy cập không tồn tại hoặc đã được di chuyển.
         </p>
+
         <div className="mt-6 flex justify-center gap-3">
           <Button
             variant="outline"
@@ -39,6 +53,7 @@ function NotFoundPage() {
           >
             Quay lại
           </Button>
+
           <Button
             variant="primary"
             size="sm"
@@ -57,7 +72,8 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [activeCallContact, setActiveCallContact] = useState<Contact | null>(null);
+  const [activeCallContact, setActiveCallContact] =
+    useState<Contact | null>(null);
 
   const screenToPath: Record<Screen, string> = {
     landing: '/',
@@ -91,7 +107,10 @@ export default function App() {
   };
 
   return (
-    <div id="applet-viewport-root" className="min-h-screen overflow-x-hidden bg-brand-bg">
+    <div
+      id="applet-viewport-root"
+      className="min-h-screen overflow-x-hidden bg-brand-bg"
+    >
       <AnimatePresence mode="wait">
         <Routes location={location} key={location.pathname}>
           <Route
@@ -121,6 +140,62 @@ export default function App() {
                   onNavigate={handleNavigate}
                   onLoginSuccess={handleLoginSuccess}
                 />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/register"
+            element={
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.2 }}
+              >
+                <RegisterPage />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/forgot-password"
+            element={
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ForgotPasswordPage />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/verify-otp"
+            element={
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.2 }}
+              >
+                <VerifyOtpPage />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/reset-password"
+            element={
+              <motion.div
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ResetPasswordPage />
               </motion.div>
             }
           />

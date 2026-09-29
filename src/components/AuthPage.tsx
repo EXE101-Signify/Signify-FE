@@ -1,63 +1,119 @@
-import React, { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { motion } from 'motion/react';
-import { LogIn, ArrowLeft, Mail, Lock, ShieldCheck, KeyRound, UserCheck } from 'lucide-react';
-import { Screen } from '../types';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Lock,
+  Mail,
+  ShieldCheck,
+  UserCheck,
+  UserPlus,
+} from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+
+import type { Screen } from '../types';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
   onLoginSuccess: () => void;
 }
 
-export default function AuthPage({ onNavigate, onLoginSuccess }: AuthPageProps) {
+interface LoginLocationState {
+  message?: string;
+}
+
+export default function AuthPage({
+  onNavigate,
+  onLoginSuccess,
+}: AuthPageProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as LoginLocationState | null;
+
   const [email, setEmail] = useState('thanhliem@signbridge.vn');
   const [password, setPassword] = useState('••••••••');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setIsSubmitting(true);
-    // Simulate real auth call
-    setTimeout(() => {
+
+    // Mock API đăng nhập.
+    window.setTimeout(() => {
       setIsSubmitting(false);
       onLoginSuccess();
     }, 800);
   };
 
   return (
-    <div id="auth-page-root" className="min-h-screen bg-brand-bg text-brand-text font-sans flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative bg-dot-grid">
-      {/* Back to Home Button */}
-      <div className="absolute top-6 left-6">
-        <button 
+    <div
+      id="auth-page-root"
+      className="relative flex min-h-screen flex-col justify-center bg-brand-bg bg-dot-grid py-12 font-sans text-brand-text sm:px-6 lg:px-8"
+    >
+      <div className="absolute left-6 top-6">
+        <button
           id="back-to-home-btn"
+          type="button"
           onClick={() => onNavigate('landing')}
-          className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-brand-text-muted hover:text-brand-primary transition-colors bg-white px-4 py-2.5 rounded-xl border border-brand-border shadow-sm cursor-pointer"
+          className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-brand-border bg-white px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-brand-text-muted shadow-sm transition-colors hover:text-brand-primary"
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="h-4 w-4" />
           Quay lại Trang chủ
         </button>
       </div>
 
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="mx-auto w-12 h-12 bg-brand-primary rounded-2xl flex items-center justify-center text-white shadow-md shadow-brand-primary/10">
-          <ShieldCheck className="w-6 h-6" />
+      <div className="text-center sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-primary text-white shadow-md shadow-brand-primary/10">
+          <ShieldCheck className="h-6 w-6" />
         </div>
-        <h2 className="mt-6 text-3xl font-black tracking-tight text-brand-text uppercase">
-          Chào mừng <span className="text-brand-primary">trở lại!</span>
-        </h2>
+
+        <h1 className="mt-6 text-3xl font-black uppercase tracking-tight text-brand-text">
+          Chào mừng{' '}
+          <span className="text-brand-primary">trở lại!</span>
+        </h1>
+
         <p className="mt-2 text-xs uppercase tracking-widest text-brand-text-muted">
-          Đăng nhập vào hệ thống <span className="font-extrabold text-brand-primary">SignBridge</span>
+          Đăng nhập vào hệ thống{' '}
+          <span className="font-extrabold text-brand-primary">
+            SignBridge
+          </span>
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 border border-brand-border shadow-md rounded-[24px] sm:px-10 relative overflow-hidden">
-          <div className="absolute top-0 inset-x-0 h-1.5 bg-brand-primary"></div>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="relative overflow-hidden rounded-[24px] border border-brand-border bg-white px-4 py-8 shadow-md sm:px-10"
+        >
+          <div className="absolute inset-x-0 top-0 h-1.5 bg-brand-primary" />
 
-          {/* Quick Sandbox Login Box */}
-          <div className="mb-6 p-4.5 bg-brand-bg border border-brand-border rounded-2xl flex flex-col items-center text-center">
-            <UserCheck className="w-6 h-6 text-brand-primary mb-1" />
-            <h4 className="text-xs font-bold text-brand-primary uppercase tracking-wide">Đăng nhập nhanh</h4>
-            <p className="text-[10px] text-brand-text-muted mt-0.5 mb-3.5 leading-relaxed font-semibold">Bỏ qua nhập mật khẩu để lấy tài khoản Pro của "Thanh Liêm"</p>
+          {locationState?.message && (
+            <div
+              role="status"
+              className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3"
+            >
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+
+              <p className="text-xs font-semibold leading-relaxed text-emerald-700">
+                {locationState.message}
+              </p>
+            </div>
+          )}
+
+          <div className="mb-6 flex flex-col items-center rounded-2xl border border-brand-border bg-brand-bg p-4.5 text-center">
+            <UserCheck className="mb-1 h-6 w-6 text-brand-primary" />
+
+            <h2 className="text-xs font-bold uppercase tracking-wide text-brand-primary">
+              Đăng nhập nhanh
+            </h2>
+
+            <p className="mb-3.5 mt-0.5 text-[10px] font-semibold leading-relaxed text-brand-text-muted">
+              Bỏ qua nhập mật khẩu để lấy tài khoản Pro của
+              &quot;Thanh Liêm&quot;
+            </p>
+
             <button
               id="quick-login-sandbox-btn"
               type="button"
@@ -66,7 +122,7 @@ export default function AuthPage({ onNavigate, onLoginSuccess }: AuthPageProps) 
                 setPassword('••••••••');
                 onLoginSuccess();
               }}
-              className="w-full py-3 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-xl text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md shadow-brand-primary/15"
+              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-primary py-3 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-brand-primary/15 transition-all hover:bg-brand-primary-hover"
             >
               Chọn tài khoản Thanh Liêm (Pro)
             </button>
@@ -74,75 +130,93 @@ export default function AuthPage({ onNavigate, onLoginSuccess }: AuthPageProps) 
 
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-[10px] font-bold text-brand-text-muted uppercase tracking-widest">
-                Địa chỉ Email
+              <label
+                htmlFor="auth-email-input"
+                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
+              >
+                Địa chỉ email
               </label>
-              <div className="mt-1.5 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-brand-text-muted/65">
-                  <Mail className="w-4 h-4" />
+
+              <div className="relative mt-1.5 rounded-md shadow-sm">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-brand-text-muted/65">
+                  <Mail className="h-4 w-4" />
                 </div>
+
                 <input
                   id="auth-email-input"
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 pr-4 py-3 bg-brand-bg border border-brand-border rounded-xl text-xs font-bold focus:bg-white focus:ring-2 focus:ring-brand-primary text-brand-text outline-none transition-all"
+                  onChange={(event) => setEmail(event.target.value)}
+                  className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
                   placeholder="name@example.com"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold text-brand-text-muted uppercase tracking-widest">
+              <label
+                htmlFor="auth-password-input"
+                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
+              >
                 Mật khẩu đăng nhập
               </label>
-              <div className="mt-1.5 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-brand-text-muted/65">
-                  <Lock className="w-4 h-4" />
+
+              <div className="relative mt-1.5 rounded-md shadow-sm">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-brand-text-muted/65">
+                  <Lock className="h-4 w-4" />
                 </div>
+
                 <input
                   id="auth-password-input"
                   type="password"
                   required
+                  autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-4 py-3 bg-brand-bg border border-brand-border rounded-xl text-xs font-bold focus:bg-white focus:ring-2 focus:ring-brand-primary text-brand-text outline-none transition-all"
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
                   placeholder="••••••••"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-4">
               <div className="flex items-center">
                 <input
                   id="remember-me"
                   type="checkbox"
                   defaultChecked
-                  className="h-4 w-4 text-brand-primary focus:ring-brand-primary border-brand-border-high rounded cursor-pointer"
+                  className="h-4 w-4 cursor-pointer rounded border-brand-border-high text-brand-primary focus:ring-brand-primary"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-xs text-brand-text-muted font-bold cursor-pointer">
+
+                <label
+                  htmlFor="remember-me"
+                  className="ml-2 block cursor-pointer text-xs font-bold text-brand-text-muted"
+                >
                   Ghi nhớ tài khoản
                 </label>
               </div>
 
-              <div className="text-xs">
-                <a href="#" className="font-bold text-brand-primary hover:text-brand-primary-hover">
-                  Quên mật khẩu?
-                </a>
-              </div>
-            </div>
-
-            <div>
               <button
-                id="auth-submit-btn"
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl text-xs font-bold uppercase tracking-wider text-white bg-brand-primary hover:bg-brand-primary-hover transition-all cursor-pointer shadow-md shadow-brand-primary/10"
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                className="cursor-pointer text-xs font-bold text-brand-primary hover:text-brand-primary-hover"
               >
-                {isSubmitting ? 'Đang xác thực...' : 'Đăng nhập tài khoản'}
+                Quên mật khẩu?
               </button>
             </div>
+
+            <button
+              id="auth-submit-btn"
+              type="submit"
+              disabled={isSubmitting}
+              className="flex w-full cursor-pointer justify-center rounded-xl border border-transparent bg-brand-primary px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-brand-primary/10 transition-all hover:bg-brand-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSubmitting
+                ? 'Đang xác thực...'
+                : 'Đăng nhập tài khoản'}
+            </button>
           </form>
 
           <div className="mt-6">
@@ -150,8 +224,11 @@ export default function AuthPage({ onNavigate, onLoginSuccess }: AuthPageProps) 
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-brand-border" />
               </div>
-              <div className="relative flex justify-center text-[10px] uppercase font-bold">
-                <span className="px-2 bg-white text-brand-text-muted/60">Hoặc tiếp tục với</span>
+
+              <div className="relative flex justify-center text-[10px] font-bold uppercase">
+                <span className="bg-white px-2 text-brand-text-muted/60">
+                  Hoặc tiếp tục với
+                </span>
               </div>
             </div>
 
@@ -159,22 +236,39 @@ export default function AuthPage({ onNavigate, onLoginSuccess }: AuthPageProps) 
               <button
                 id="oauth-option-google"
                 type="button"
-                onClick={() => onLoginSuccess()}
-                className="w-full inline-flex justify-center py-2.5 px-4 rounded-xl border border-brand-border bg-white text-xs font-bold text-brand-text hover:bg-brand-bg transition-all cursor-pointer"
+                onClick={onLoginSuccess}
+                className="inline-flex w-full cursor-pointer justify-center rounded-xl border border-brand-border bg-white px-4 py-2.5 text-xs font-bold text-brand-text transition-all hover:bg-brand-bg"
               >
                 Google
               </button>
+
               <button
                 id="oauth-option-apple"
                 type="button"
-                onClick={() => onLoginSuccess()}
-                className="w-full inline-flex justify-center py-2.5 px-4 rounded-xl border border-brand-border bg-white text-xs font-bold text-brand-text hover:bg-brand-bg transition-all cursor-pointer"
+                onClick={onLoginSuccess}
+                className="inline-flex w-full cursor-pointer justify-center rounded-xl border border-brand-border bg-white px-4 py-2.5 text-xs font-bold text-brand-text transition-all hover:bg-brand-bg"
               >
                 Apple ID
               </button>
             </div>
           </div>
-        </div>
+
+          <div className="mt-6 flex items-center justify-center gap-2 border-t border-brand-border pt-6">
+            <UserPlus className="h-4 w-4 text-brand-text-muted" />
+
+            <p className="text-xs font-semibold text-brand-text-muted">
+              Chưa có tài khoản?
+            </p>
+
+            <button
+              type="button"
+              onClick={() => navigate('/register')}
+              className="cursor-pointer text-xs font-extrabold text-brand-primary hover:text-brand-primary-hover"
+            >
+              Đăng ký ngay
+            </button>
+          </div>
+        </motion.div>
       </div>
     </div>
   );
