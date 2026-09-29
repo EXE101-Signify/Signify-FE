@@ -70,7 +70,7 @@ export default function AuthPage({
         </div>
       )}
 
-      <section className="mb-6 border-b border-brand-border pb-6">
+      {/* <section className="mb-6 border-b border-brand-border pb-6">
         <div className="flex items-start gap-3">
           <UserCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
 
@@ -95,7 +95,7 @@ export default function AuthPage({
         >
           Tiếp tục với tài khoản Thanh Liêm
         </Button>
-      </section>
+      </section> */}
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <Input
