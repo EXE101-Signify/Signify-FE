@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   BookOpen,
   Languages,
@@ -13,13 +14,13 @@ import { BrandLogo, PageHeader } from '../components/common';
 type AppScreen = Extract<Screen, 'dashboard' | 'languages'>;
 
 interface AppLayoutProps {
-  activeScreen: AppScreen;
+  activeScreen?: AppScreen;
   title: ReactNode;
   subtitle?: string;
   actions?: ReactNode;
   children: ReactNode;
-  onNavigate: (screen: Screen) => void;
-  onLogout: () => void;
+  onNavigate?: (screen: Screen) => void;
+  onLogout?: () => void;
   onContactsClick?: () => void;
 }
 
@@ -40,6 +41,31 @@ export default function AppLayout({
   onLogout,
   onContactsClick,
 }: AppLayoutProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isCurrentScreen = (screen: AppScreen) => {
+    if (activeScreen) return activeScreen === screen;
+    if (screen === 'dashboard') return location.pathname === '/dashboard';
+    if (screen === 'languages') return location.pathname === '/languages';
+    return false;
+  };
+
+  const handleNav = (screen: Screen, path: string) => {
+    if (onNavigate) {
+      onNavigate(screen);
+    }
+    navigate(path);
+  };
+
+  const handleLogoutAction = () => {
+    if (onLogout) {
+      onLogout();
+    } else {
+      navigate('/login');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-brand-bg font-sans text-brand-text">
       <aside className="fixed inset-y-0 left-0 z-40 flex w-66 flex-col justify-between border-r border-brand-border bg-white p-5 shadow-sm">
@@ -49,10 +75,8 @@ export default function AppLayout({
           <nav className="space-y-1.5" aria-label="Điều hướng chính">
             <button
               type="button"
-              className={getNavItemClass(
-                activeScreen === 'dashboard',
-              )}
-              onClick={() => onNavigate('dashboard')}
+              className={getNavItemClass(isCurrentScreen('dashboard'))}
+              onClick={() => handleNav('dashboard', '/dashboard')}
             >
               <LayoutDashboard
                 className="h-4 w-4"
@@ -63,10 +87,8 @@ export default function AppLayout({
 
             <button
               type="button"
-              className={getNavItemClass(
-                activeScreen === 'languages',
-              )}
-              onClick={() => onNavigate('languages')}
+              className={getNavItemClass(isCurrentScreen('languages'))}
+              onClick={() => handleNav('languages', '/languages')}
             >
               <Languages
                 className="h-4 w-4"
@@ -78,7 +100,7 @@ export default function AppLayout({
             <button
               type="button"
               className={getNavItemClass(false)}
-              onClick={onContactsClick}
+              onClick={onContactsClick || (() => handleNav('dashboard', '/dashboard'))}
             >
               <Users
                 className="h-4 w-4"
@@ -90,7 +112,7 @@ export default function AppLayout({
             <button
               type="button"
               className={getNavItemClass(false)}
-              onClick={() => onNavigate('landing')}
+              onClick={() => handleNav('landing', '/')}
             >
               <BookOpen
                 className="h-4 w-4"
@@ -123,7 +145,7 @@ export default function AppLayout({
 
           <button
             type="button"
-            onClick={onLogout}
+            onClick={handleLogoutAction}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-100 py-2.5 text-xs font-bold uppercase tracking-wider text-rose-700 transition-all hover:bg-rose-600 hover:text-white"
           >
             <LogOut
@@ -146,4 +168,4 @@ export default function AppLayout({
       </div>
     </div>
   );
-}
+}
