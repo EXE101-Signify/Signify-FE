@@ -1,6 +1,16 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { MailCheck, RefreshCw } from 'lucide-react';
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+} from 'react';
+import {
+  MailCheck,
+  RefreshCw,
+  ShieldCheck,
+} from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+
+import { Button } from '../common';
 import AuthShell from './AuthShell';
 import OtpInput from './OtpInput';
 
@@ -74,7 +84,6 @@ export default function VerifyOtpPage() {
 
     setIsVerifying(true);
 
-    // Mock API xác thực OTP.
     window.setTimeout(() => {
       setIsVerifying(false);
 
@@ -113,55 +122,67 @@ export default function VerifyOtpPage() {
 
   return (
     <AuthShell
-      title="Xác thực"
-      highlight="OTP"
+      title="Xác minh"
+      highlight="email"
       subtitle={
         isRegisterFlow
-          ? 'Xác minh email đăng ký'
-          : 'Xác minh yêu cầu đặt lại mật khẩu'
+          ? 'Hoàn tất bước xác minh tài khoản Signify.'
+          : 'Xác minh yêu cầu đặt lại mật khẩu.'
       }
-      backTo={isRegisterFlow ? '/register' : '/forgot-password'}
+      backTo={
+        isRegisterFlow ? '/register' : '/forgot-password'
+      }
     >
-      <div className="mb-6 text-center">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-primary-light text-brand-primary">
-          <MailCheck className="h-5 w-5" />
+      <header className="mb-6 border-b border-brand-border pb-5">
+        <div className="flex items-start gap-3">
+          <MailCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
+
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-brand-text">
+              Nhập mã xác thực
+            </h2>
+
+            <p className="mt-1 text-sm leading-5 text-brand-text-muted">
+              Mã OTP đã được gửi đến
+            </p>
+
+            <p className="mt-1 break-all text-sm font-semibold text-brand-text">
+              {routeState.email}
+            </p>
+          </div>
         </div>
-
-        <h2 className="mt-3 text-sm font-extrabold uppercase tracking-wide text-brand-text">
-          Nhập mã xác thực
-        </h2>
-
-        <p className="mt-1 text-xs leading-relaxed text-brand-text-muted">
-          Mã OTP gồm 6 chữ số đã được gửi đến
-        </p>
-
-        <p className="mt-1 break-all text-xs font-extrabold text-brand-primary">
-          {routeState.email}
-        </p>
-      </div>
+      </header>
 
       <form className="space-y-5" onSubmit={handleVerify}>
-        <OtpInput
-          value={otp}
-          onChange={(value) => {
-            setOtp(value);
-            setError('');
-            setNotice('');
-          }}
-          disabled={isVerifying}
-        />
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-brand-text">
+            Mã OTP
+          </label>
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
-          <p className="text-[11px] font-semibold text-amber-700">
+          <OtpInput
+            value={otp}
+            onChange={(value) => {
+              setOtp(value);
+              setError('');
+              setNotice('');
+            }}
+            disabled={isVerifying}
+          />
+        </div>
+
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
             Mã OTP dùng để kiểm thử:{' '}
-            <span className="font-black">{MOCK_OTP}</span>
+            <code className="font-mono font-semibold">
+              {MOCK_OTP}
+            </code>
           </p>
         </div>
 
         {error && (
           <div
             role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-600"
+            className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
           >
             {error}
           </div>
@@ -170,24 +191,27 @@ export default function VerifyOtpPage() {
         {notice && (
           <div
             role="status"
-            className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700"
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
           >
             {notice}
           </div>
         )}
 
-        <button
+        <Button
           id="verify-otp-submit-btn"
           type="submit"
-          disabled={isVerifying || otp.length !== 6}
-          className="flex w-full cursor-pointer justify-center rounded-xl border border-transparent bg-brand-primary px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-brand-primary/10 transition-all hover:bg-brand-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+          size="lg"
+          fullWidth
+          isLoading={isVerifying}
+          disabled={otp.length !== 6}
+          leftIcon={<ShieldCheck className="h-4 w-4" />}
         >
-          {isVerifying ? 'Đang xác thực...' : 'Xác nhận mã OTP'}
-        </button>
+          {isVerifying ? 'Đang xác thực' : 'Xác nhận mã OTP'}
+        </Button>
       </form>
 
-      <div className="mt-6 text-center">
-        <p className="text-xs font-semibold text-brand-text-muted">
+      <div className="mt-6 border-t border-brand-border pt-5 text-center">
+        <p className="text-sm text-brand-text-muted">
           Bạn chưa nhận được mã?
         </p>
 
@@ -195,9 +219,9 @@ export default function VerifyOtpPage() {
           type="button"
           disabled={cooldown > 0}
           onClick={handleResendOtp}
-          className="mt-2 inline-flex cursor-pointer items-center justify-center gap-2 text-xs font-extrabold text-brand-primary hover:text-brand-primary-hover disabled:cursor-not-allowed disabled:text-brand-text-muted/60"
+          className="mt-2 inline-flex items-center justify-center gap-2 text-sm font-semibold text-brand-primary hover:text-brand-primary-hover disabled:cursor-not-allowed disabled:text-brand-text-muted"
         >
-          <RefreshCw className="h-3.5 w-3.5" />
+          <RefreshCw className="h-4 w-4" />
 
           {cooldown > 0
             ? `Gửi lại sau ${cooldown} giây`

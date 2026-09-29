@@ -1,6 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { KeyRound, Lock } from 'lucide-react';
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+} from 'react';
+import { KeyRound, Lock, Save } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+
+import { Button, Input } from '../common';
 import AuthShell from './AuthShell';
 
 interface ResetPasswordRouteState {
@@ -11,10 +17,12 @@ interface ResetPasswordRouteState {
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const routeState = location.state as ResetPasswordRouteState | null;
+  const routeState =
+    location.state as ResetPasswordRouteState | null;
 
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] =
+    useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -44,7 +52,6 @@ export default function ResetPasswordPage() {
 
     setIsSubmitting(true);
 
-    // Mock API cập nhật mật khẩu mới.
     window.setTimeout(() => {
       setIsSubmitting(false);
 
@@ -60,97 +67,82 @@ export default function ResetPasswordPage() {
 
   return (
     <AuthShell
-      title="Tạo mật khẩu"
+      title="Đặt mật khẩu"
       highlight="mới"
-      subtitle="Hoàn tất khôi phục tài khoản"
+      subtitle="Hoàn tất quá trình khôi phục tài khoản."
       backTo="/login"
     >
-      <div className="mb-6 text-center">
-        <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-primary-light text-brand-primary">
-          <KeyRound className="h-5 w-5" />
+      <header className="mb-6 border-b border-brand-border pb-5">
+        <div className="flex items-start gap-3">
+          <KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
+
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-brand-text">
+              Tạo mật khẩu mới
+            </h2>
+
+            <p className="mt-1 text-sm leading-5 text-brand-text-muted">
+              Tài khoản đã được xác thực:
+            </p>
+
+            <p className="mt-1 break-all text-sm font-semibold text-brand-text">
+              {routeState.email}
+            </p>
+          </div>
         </div>
-
-        <h2 className="mt-3 text-sm font-extrabold uppercase tracking-wide text-brand-text">
-          Đặt lại mật khẩu
-        </h2>
-
-        <p className="mt-1 text-xs leading-relaxed text-brand-text-muted">
-          Tài khoản đã được xác thực:
-        </p>
-
-        <p className="mt-1 break-all text-xs font-extrabold text-brand-primary">
-          {routeState.email}
-        </p>
-      </div>
+      </header>
 
       <form className="space-y-5" onSubmit={handleSubmit}>
-        <div>
-          <label
-            htmlFor="reset-password"
-            className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
-          >
-            Mật khẩu mới
-          </label>
+        <Input
+          id="reset-password"
+          label="Mật khẩu mới"
+          type="password"
+          required
+          minLength={8}
+          autoComplete="new-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          placeholder="Tối thiểu 8 ký tự"
+          helperText="Không sử dụng lại mật khẩu cũ."
+          leftIcon={<Lock className="h-4 w-4" />}
+        />
 
-          <div className="relative mt-1.5">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
-
-            <input
-              id="reset-password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Tối thiểu 8 ký tự"
-              className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label
-            htmlFor="reset-confirm-password"
-            className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
-          >
-            Xác nhận mật khẩu mới
-          </label>
-
-          <div className="relative mt-1.5">
-            <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
-
-            <input
-              id="reset-confirm-password"
-              type="password"
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              placeholder="Nhập lại mật khẩu mới"
-              className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
-            />
-          </div>
-        </div>
+        <Input
+          id="reset-confirm-password"
+          label="Xác nhận mật khẩu mới"
+          type="password"
+          required
+          minLength={8}
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(event) =>
+            setConfirmPassword(event.target.value)
+          }
+          placeholder="Nhập lại mật khẩu mới"
+          leftIcon={<Lock className="h-4 w-4" />}
+        />
 
         {error && (
           <div
             role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-600"
+            className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
           >
             {error}
           </div>
         )}
 
-        <button
+        <Button
           id="reset-password-submit-btn"
           type="submit"
-          disabled={isSubmitting}
-          className="flex w-full cursor-pointer justify-center rounded-xl border border-transparent bg-brand-primary px-4 py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-brand-primary/10 transition-all hover:bg-brand-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+          size="lg"
+          fullWidth
+          isLoading={isSubmitting}
+          leftIcon={<Save className="h-4 w-4" />}
         >
-          {isSubmitting ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
-        </button>
+          {isSubmitting
+            ? 'Đang cập nhật'
+            : 'Cập nhật mật khẩu'}
+        </Button>
       </form>
     </AuthShell>
   );

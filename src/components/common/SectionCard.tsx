@@ -16,7 +16,12 @@ export default function SectionCard({
   return (
     <Component
       id={id}
-      className={`rounded-[24px] border border-brand-border bg-white shadow-sm ${className}`}
+      className={[
+        'rounded-xl border border-brand-border bg-brand-surface',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       {children}
     </Component>

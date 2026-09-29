@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import {
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   Navigate,
   Route,
@@ -11,7 +14,6 @@ import { ArrowLeft, Home } from 'lucide-react';
 
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
-import LandingPage from './components/LandingPage';
 import LanguagePacks from './components/LanguagePacks';
 import VideoCall from './components/VideoCall';
 import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
@@ -22,6 +24,22 @@ import { BrandLogo, Button } from './components/common';
 
 import type { Contact, Screen } from './types';
 
+interface ProtectedRouteProps {
+  isAuthenticated: boolean;
+  children: ReactNode;
+}
+
+function ProtectedRoute({
+  isAuthenticated,
+  children,
+}: ProtectedRouteProps) {
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
 function NotFoundPage() {
   const navigate = useNavigate();
 
@@ -31,12 +49,12 @@ function NotFoundPage() {
         <BrandLogo />
       </div>
 
-      <div className="max-w-md rounded-2xl border border-brand-border bg-white p-8 shadow-sm">
-        <span className="inline-block rounded-full bg-brand-primary-light px-3 py-1 text-xs font-bold text-brand-primary">
-          404 Not Found
+      <div className="max-w-md rounded-xl border border-brand-border bg-white p-8">
+        <span className="inline-block rounded-md bg-brand-primary-light px-3 py-1 text-xs font-semibold text-brand-primary">
+          404
         </span>
 
-        <h1 className="mt-4 text-2xl font-extrabold text-brand-text">
+        <h1 className="mt-4 text-2xl font-semibold text-brand-text">
           Trang không tồn tại
         </h1>
 
@@ -55,12 +73,11 @@ function NotFoundPage() {
           </Button>
 
           <Button
-            variant="primary"
             size="sm"
             leftIcon={<Home className="h-4 w-4" />}
             onClick={() => navigate('/')}
           >
-            Trang chủ
+            Trang chính
           </Button>
         </div>
       </div>
@@ -75,8 +92,15 @@ export default function App() {
   const [activeCallContact, setActiveCallContact] =
     useState<Contact | null>(null);
 
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () =>
+      window.sessionStorage.getItem(
+        'signify-authenticated',
+      ) === 'true',
+  );
+
   const screenToPath: Record<Screen, string> = {
-    landing: '/',
+    landing: '/login',
     login: '/login',
     dashboard: '/dashboard',
     call: '/call',
@@ -84,16 +108,27 @@ export default function App() {
   };
 
   const handleNavigate = (screen: Screen) => {
-    navigate(screenToPath[screen] || '/');
+    navigate(screenToPath[screen] || '/login');
   };
 
   const handleLoginSuccess = () => {
-    navigate('/dashboard');
+    window.sessionStorage.setItem(
+      'signify-authenticated',
+      'true',
+    );
+
+    setIsAuthenticated(true);
+    navigate('/dashboard', { replace: true });
   };
 
   const handleLogout = () => {
+    window.sessionStorage.removeItem(
+      'signify-authenticated',
+    );
+
+    setIsAuthenticated(false);
     setActiveCallContact(null);
-    navigate('/');
+    navigate('/login', { replace: true });
   };
 
   const handleStartCall = (contact: Contact) => {
@@ -116,31 +151,35 @@ export default function App() {
           <Route
             path="/"
             element={
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-              >
-                <LandingPage onNavigate={handleNavigate} />
-              </motion.div>
+              <Navigate
+                to={
+                  isAuthenticated
+                    ? '/dashboard'
+                    : '/login'
+                }
+                replace
+              />
             }
           />
 
           <Route
             path="/login"
             element={
-              <motion.div
-                initial={{ opacity: 0, y: 15 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
-                transition={{ duration: 0.2 }}
-              >
-                <AuthPage
-                  onNavigate={handleNavigate}
-                  onLoginSuccess={handleLoginSuccess}
-                />
-              </motion.div>
+              isAuthenticated ? (
+                <Navigate to="/dashboard" replace />
+              ) : (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <AuthPage
+                    onNavigate={handleNavigate}
+                    onLoginSuccess={handleLoginSuccess}
+                  />
+                </motion.div>
+              )
             }
           />
 
@@ -148,9 +187,9 @@ export default function App() {
             path="/register"
             element={
               <motion.div
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
                 <RegisterPage />
@@ -162,9 +201,9 @@ export default function App() {
             path="/forgot-password"
             element={
               <motion.div
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
                 <ForgotPasswordPage />
@@ -176,9 +215,9 @@ export default function App() {
             path="/verify-otp"
             element={
               <motion.div
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
                 <VerifyOtpPage />
@@ -190,9 +229,9 @@ export default function App() {
             path="/reset-password"
             element={
               <motion.div
-                initial={{ opacity: 0, y: 15 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -15 }}
+                exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
                 <ResetPasswordPage />
@@ -203,53 +242,76 @@ export default function App() {
           <Route
             path="/dashboard"
             element={
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2 }}
+              <ProtectedRoute
+                isAuthenticated={isAuthenticated}
               >
-                <Dashboard
-                  onNavigate={handleNavigate}
-                  onLogout={handleLogout}
-                  onStartCall={handleStartCall}
-                />
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Dashboard
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                    onStartCall={handleStartCall}
+                  />
+                </motion.div>
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/call"
             element={
-              activeCallContact ? (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.98 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.02 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  <VideoCall
-                    contact={activeCallContact}
-                    onEndCall={handleEndCall}
-                  />
-                </motion.div>
-              ) : (
-                <Navigate to="/dashboard" replace />
-              )
+              <ProtectedRoute
+                isAuthenticated={isAuthenticated}
+              >
+                {activeCallContact ? (
+                  <motion.div
+                    initial={{
+                      opacity: 0,
+                      scale: 0.98,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      scale: 1,
+                    }}
+                    exit={{
+                      opacity: 0,
+                      scale: 1.02,
+                    }}
+                    transition={{ duration: 0.25 }}
+                  >
+                    <VideoCall
+                      contact={activeCallContact}
+                      onEndCall={handleEndCall}
+                    />
+                  </motion.div>
+                ) : (
+                  <Navigate to="/dashboard" replace />
+                )}
+              </ProtectedRoute>
             }
           />
 
           <Route
             path="/languages"
             element={
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
+              <ProtectedRoute
+                isAuthenticated={isAuthenticated}
               >
-                <LanguagePacks onNavigate={handleNavigate} />
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, x: 15 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -15 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <LanguagePacks
+                    onNavigate={handleNavigate}
+                  />
+                </motion.div>
+              </ProtectedRoute>
             }
           />
 
