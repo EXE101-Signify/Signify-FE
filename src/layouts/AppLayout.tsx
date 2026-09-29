@@ -68,7 +68,7 @@ export default function AppLayout({
 
   return (
     <div className="min-h-screen bg-brand-bg font-sans text-brand-text">
-      <aside className="fixed inset-y-0 left-0 z-40 flex w-66 flex-col justify-between border-r border-brand-border bg-white p-5 shadow-sm">
+      <aside className="fixed inset-y-0 left-0 z-40 flex w-[264px] flex-col justify-between border-r border-brand-border bg-white p-5 shadow-sm">
         <div className="space-y-8">
           <BrandLogo />
 
@@ -157,7 +157,7 @@ export default function AppLayout({
         </div>
       </aside>
 
-      <div className="min-w-0 pl-66">
+      <div className="min-w-0 pl-[264px]">
         <PageHeader
           title={title}
           subtitle={subtitle}

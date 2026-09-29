@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Bell,
   Clock,
+  Info,
   Languages,
   Phone,
   Search,
@@ -9,6 +11,7 @@ import {
   Sparkles,
   Users,
   Video,
+  X,
 } from 'lucide-react';
 
 import type { CallLog, Contact, Screen } from '../types';
@@ -112,6 +115,18 @@ export default function Dashboard({
   onLogout,
   onStartCall,
 }: DashboardProps) {
+  const location = useLocation();
+  const locationState = location.state as { toastMessage?: string } | null;
+  const [toastBanner, setToastBanner] = useState<string | null>(
+    locationState?.toastMessage || null,
+  );
+
+  useEffect(() => {
+    if (locationState?.toastMessage) {
+      setToastBanner(locationState.toastMessage);
+    }
+  }, [location.state]);
+
   const [activeTab, setActiveTab] = useState<'contacts' | 'recent'>(
     'contacts',
   );
@@ -222,6 +237,22 @@ export default function Dashboard({
         id="dashboard-body"
         className="space-y-8 p-5 sm:p-8"
       >
+        {toastBanner && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs font-bold text-blue-900 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 shrink-0 text-blue-600" />
+              <span>{toastBanner}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToastBanner(null)}
+              className="cursor-pointer rounded-lg p-1 hover:bg-blue-100 text-blue-700"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Trạng thái AI */}
         <div
           id="ai-status-row"

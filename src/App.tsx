@@ -72,6 +72,10 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('signbridge_auth') === 'true';
+  });
+
   const [activeCallContact, setActiveCallContact] =
     useState<Contact | null>(null);
 
@@ -88,10 +92,14 @@ export default function App() {
   };
 
   const handleLoginSuccess = () => {
+    localStorage.setItem('signbridge_auth', 'true');
+    setIsAuthenticated(true);
     navigate('/dashboard');
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('signbridge_auth');
+    setIsAuthenticated(false);
     setActiveCallContact(null);
     navigate('/');
   };
@@ -234,7 +242,14 @@ export default function App() {
                   />
                 </motion.div>
               ) : (
-                <Navigate to="/dashboard" replace />
+                <Navigate
+                  to="/dashboard"
+                  replace
+                  state={{
+                    toastMessage:
+                      'Vui lòng chọn một liên hệ từ danh bạ để bắt đầu cuộc gọi video!',
+                  }}
+                />
               )
             }
           />

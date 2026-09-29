@@ -52,9 +52,12 @@ app.post('/api/translate', async (req, res) => {
       visualSequence = text.toUpperCase().split(' ').map((word: string) => `[${word}]`);
       translated = `Chuỗi ký hiệu: ${visualSequence.join(' ➔ ')}`;
       explanation = `Cách thức thực hiện: Mô tả từng ký hiệu tương ứng với các từ khóa chính lực đẩy trong từ "${text}". Để diễn tả hiệu quả, duy trì ánh mắt tự nhiên và nét mặt tươi vui.`;
-    } else {
+    } else if (mode === 'sign_to_text') {
       translated = `Dịch chuẩn: "${text.charAt(0).toUpperCase() + text.slice(1)}"`;
       explanation = `Nhận diện ngữ cảnh giao tiếp thông thường, chuyển cấu trúc động học ký hiệu về câu văn xuôi tiếng Việt hoàn chỉnh, lưu loát.`;
+    } else {
+      translated = `SignBridge AI: "${text}" - Hệ thống phản hồi hỗ trợ giao tiếp ngôn ngữ ký hiệu.`;
+      explanation = `Trợ lý AI sẵn sàng giải đáp thắc mắc và hỗ trợ phiên dịch.`;
     }
 
     return res.json({ translated, explanation, visualSequence, isFallback: true });
@@ -87,7 +90,7 @@ Câu cần dịch: "${text}"
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: prompt.includes('JSON') ? 'application/json' : 'text/plain',
