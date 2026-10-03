@@ -8,10 +8,16 @@ import {
   ShieldCheck,
   UserCheck,
   UserPlus,
+  Eye,
+  EyeOff,
+  AlertCircle,
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import type { Screen } from '../types';
+import GoogleButton from './auth/GoogleButton';
+import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
+import { validateEmail, validatePassword } from '../utils/validation';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
@@ -32,10 +38,52 @@ export default function AuthPage({
 
   const [email, setEmail] = useState('thanhliem@signbridge.vn');
   const [password, setPassword] = useState('••••••••');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  const [fieldErrors, setFieldErrors] = useState<{
+    email?: string;
+    password?: string;
+  }>({});
+  const [globalError, setGlobalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
+
+  const handleBlurField = (field: 'email' | 'password') => {
+    setFieldErrors((prev) => {
+      const updated = { ...prev };
+      if (field === 'email') {
+        const err = validateEmail(email);
+        if (err) updated.email = err;
+        else delete updated.email;
+      }
+      if (field === 'password') {
+        const err = validatePassword(password);
+        if (err) updated.password = err;
+        else delete updated.password;
+      }
+      return updated;
+    });
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setGlobalError('');
+
+    // If sandbox bullet points are present or normal validation
+    const emailErr = validateEmail(email);
+    const passErr = password === '••••••••' ? null : validatePassword(password);
+
+    if (emailErr || passErr) {
+      setFieldErrors({
+        email: emailErr || undefined,
+        password: passErr || undefined,
+      });
+      setGlobalError('Thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại.');
+      return;
+    }
+
+    setFieldErrors({});
     setIsSubmitting(true);
 
     // Mock API đăng nhập.
@@ -43,6 +91,10 @@ export default function AuthPage({
       setIsSubmitting(false);
       onLoginSuccess();
     }, 800);
+  };
+
+  const handleGoogleSuccess = (user: GoogleUserInfo) => {
+    onLoginSuccess();
   };
 
   return (
@@ -102,16 +154,26 @@ export default function AuthPage({
             </div>
           )}
 
+          {globalError && (
+            <div
+              role="alert"
+              className="mb-6 flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-600"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="font-medium">{globalError}</span>
+            </div>
+          )}
+
+          {/* Quick Sandbox Login Box */}
           <div className="mb-6 flex flex-col items-center rounded-2xl border border-brand-border bg-brand-bg p-4.5 text-center">
             <UserCheck className="mb-1 h-6 w-6 text-brand-primary" />
 
             <h2 className="text-xs font-bold uppercase tracking-wide text-brand-primary">
-              Đăng nhập nhanh
+              Đăng nhập nhanh (Sandbox)
             </h2>
 
             <p className="mb-3.5 mt-0.5 text-[10px] font-semibold leading-relaxed text-brand-text-muted">
-              Bỏ qua nhập mật khẩu để lấy tài khoản Pro của
-              &quot;Thanh Liêm&quot;
+              Bỏ qua nhập mật khẩu để lấy tài khoản Pro dùng thử của &quot;Thanh Liêm&quot;
             </p>
 
             <button
@@ -128,19 +190,37 @@ export default function AuthPage({
             </button>
           </div>
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          {/* Google Sign In Option */}
+          <div className="mb-6">
+            <GoogleButton
+              label="Tiếp tục bằng Google"
+              onClick={() => setIsGoogleModalOpen(true)}
+            />
+
+            <div className="relative mt-6">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-brand-border" />
+              </div>
+
+              <div className="relative flex justify-center text-[10px] font-bold uppercase">
+                <span className="bg-white px-2 text-brand-text-muted/60">
+                  Hoặc bằng Email & Mật khẩu
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div>
               <label
                 htmlFor="auth-email-input"
-                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
+                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted mb-1"
               >
                 Địa chỉ email
               </label>
 
-              <div className="relative mt-1.5 rounded-md shadow-sm">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-brand-text-muted/65">
-                  <Mail className="h-4 w-4" />
-                </div>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
 
                 <input
                   id="auth-email-input"
@@ -148,37 +228,73 @@ export default function AuthPage({
                   required
                   autoComplete="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    if (fieldErrors.email) {
+                      setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                    }
+                  }}
+                  onBlur={() => handleBlurField('email')}
+                  className={`block w-full rounded-xl border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 ${
+                    fieldErrors.email
+                      ? 'border-brand-error focus:ring-brand-error/20'
+                      : 'border-brand-border focus:ring-brand-primary'
+                  }`}
                   placeholder="name@example.com"
                 />
               </div>
+              {fieldErrors.email && (
+                <p className="mt-1 text-[11px] font-semibold text-brand-error">
+                  {fieldErrors.email}
+                </p>
+              )}
             </div>
 
             <div>
               <label
                 htmlFor="auth-password-input"
-                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
+                className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted mb-1"
               >
                 Mật khẩu đăng nhập
               </label>
 
-              <div className="relative mt-1.5 rounded-md shadow-sm">
-                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-brand-text-muted/65">
-                  <Lock className="h-4 w-4" />
-                </div>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
 
                 <input
                   id="auth-password-input"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   autoComplete="current-password"
                   value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    if (fieldErrors.password) {
+                      setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                    }
+                  }}
+                  onBlur={() => handleBlurField('password')}
+                  className={`block w-full rounded-xl border bg-brand-bg py-3 pl-10 pr-10 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 ${
+                    fieldErrors.password
+                      ? 'border-brand-error focus:ring-brand-error/20'
+                      : 'border-brand-border focus:ring-brand-primary'
+                  }`}
                   placeholder="••••••••"
                 />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-brand-text-muted/70 hover:text-brand-text cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
               </div>
+              {fieldErrors.password && (
+                <p className="mt-1 text-[11px] font-semibold text-brand-error">
+                  {fieldErrors.password}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center justify-between gap-4">
@@ -186,7 +302,8 @@ export default function AuthPage({
                 <input
                   id="remember-me"
                   type="checkbox"
-                  defaultChecked
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
                   className="h-4 w-4 cursor-pointer rounded border-brand-border-high text-brand-primary focus:ring-brand-primary"
                 />
 
@@ -219,40 +336,6 @@ export default function AuthPage({
             </button>
           </form>
 
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-brand-border" />
-              </div>
-
-              <div className="relative flex justify-center text-[10px] font-bold uppercase">
-                <span className="bg-white px-2 text-brand-text-muted/60">
-                  Hoặc tiếp tục với
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <button
-                id="oauth-option-google"
-                type="button"
-                onClick={onLoginSuccess}
-                className="inline-flex w-full cursor-pointer justify-center rounded-xl border border-brand-border bg-white px-4 py-2.5 text-xs font-bold text-brand-text transition-all hover:bg-brand-bg"
-              >
-                Google
-              </button>
-
-              <button
-                id="oauth-option-apple"
-                type="button"
-                onClick={onLoginSuccess}
-                className="inline-flex w-full cursor-pointer justify-center rounded-xl border border-brand-border bg-white px-4 py-2.5 text-xs font-bold text-brand-text transition-all hover:bg-brand-bg"
-              >
-                Apple ID
-              </button>
-            </div>
-          </div>
-
           <div className="mt-6 flex items-center justify-center gap-2 border-t border-brand-border pt-6">
             <UserPlus className="h-4 w-4 text-brand-text-muted" />
 
@@ -270,6 +353,13 @@ export default function AuthPage({
           </div>
         </motion.div>
       </div>
+
+      {/* Google Login Modal */}
+      <GoogleAuthModal
+        isOpen={isGoogleModalOpen}
+        onClose={() => setIsGoogleModalOpen(false)}
+        onSuccess={handleGoogleSuccess}
+      />
     </div>
   );
 }
