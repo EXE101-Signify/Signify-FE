@@ -18,6 +18,8 @@ import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
 import RegisterPage from './components/auth/RegisterPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import VerifyOtpPage from './components/auth/VerifyOtpPage';
+import ProfilePage from './components/profile/ProfilePage';
+import AdminUserListPage from './components/admin/AdminUserListPage';
 import { BrandLogo, Button } from './components/common';
 
 import type { Contact, Screen } from './types';
@@ -85,6 +87,8 @@ export default function App() {
     dashboard: '/dashboard',
     call: '/call',
     languages: '/languages',
+    profile: '/profile',
+    'admin-users': '/admin/users',
   };
 
   const handleNavigate = (screen: Screen) => {
@@ -221,6 +225,40 @@ export default function App() {
                   onNavigate={handleNavigate}
                   onLogout={handleLogout}
                   onStartCall={handleStartCall}
+                />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/profile"
+            element={
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ProfilePage
+                  onNavigate={handleNavigate}
+                  onLogout={handleLogout}
+                />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/admin/users"
+            element={
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AdminUserListPage
+                  onNavigate={handleNavigate}
+                  onLogout={handleLogout}
                 />
               </motion.div>
             }
