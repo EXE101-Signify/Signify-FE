@@ -6,6 +6,7 @@ import {
   Lock,
   Mail,
   ShieldCheck,
+  User,
   UserCheck,
   UserPlus,
   Eye,
@@ -37,26 +38,25 @@ export default function AuthPage({
   const location = useLocation();
   const locationState = location.state as LoginLocationState | null;
 
-  const [email, setEmail] = useState('thanhliem@signbridge.vn');
-  const [password, setPassword] = useState('••••••••');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
   const [fieldErrors, setFieldErrors] = useState<{
-    email?: string;
+    username?: string;
     password?: string;
   }>({});
   const [globalError, setGlobalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
-  const handleBlurField = (field: 'email' | 'password') => {
+  const handleBlurField = (field: 'username' | 'password') => {
     setFieldErrors((prev) => {
       const updated = { ...prev };
-      if (field === 'email') {
-        const err = validateEmail(email);
-        if (err) updated.email = err;
-        else delete updated.email;
+      if (field === 'username') {
+        if (!username.trim()) updated.username = 'Vui lòng nhập tên đăng nhập.';
+        else delete updated.username;
       }
       if (field === 'password') {
         const err = validatePassword(password);
@@ -71,12 +71,12 @@ export default function AuthPage({
     event.preventDefault();
     setGlobalError('');
 
-    const emailErr = validateEmail(email);
+    const usernameErr = !username.trim() ? 'Vui lòng nhập tên đăng nhập.' : null;
     const passErr = password === '••••••••' ? null : validatePassword(password);
 
-    if (emailErr || passErr) {
+    if (usernameErr || passErr) {
       setFieldErrors({
-        email: emailErr || undefined,
+        username: usernameErr || undefined,
         password: passErr || undefined,
       });
       setGlobalError('Thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại.');
@@ -88,7 +88,7 @@ export default function AuthPage({
 
     try {
       const res = await authApi.login({
-        username: email,
+        username: username.trim(),
         password: password,
       });
 
@@ -193,7 +193,7 @@ export default function AuthPage({
               id="quick-login-sandbox-btn"
               type="button"
               onClick={() => {
-                setEmail('thanhliem@signbridge.vn');
+                setUsername('thanhliem');
                 setPassword('••••••••');
                 onLoginSuccess();
               }}
@@ -217,7 +217,7 @@ export default function AuthPage({
 
               <div className="relative flex justify-center text-[10px] font-bold uppercase">
                 <span className="bg-white px-2 text-brand-text-muted/60">
-                  Hoặc bằng Email & Mật khẩu
+                  Hoặc bằng Tên đăng nhập & Mật khẩu
                 </span>
               </div>
             </div>
@@ -226,39 +226,39 @@ export default function AuthPage({
           <form className="space-y-5" onSubmit={handleSubmit} noValidate>
             <div>
               <label
-                htmlFor="auth-email-input"
+                htmlFor="auth-username-input"
                 className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted mb-1"
               >
-                Địa chỉ email
+                Tên đăng nhập
               </label>
 
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
+                <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
 
                 <input
-                  id="auth-email-input"
-                  type="email"
+                  id="auth-username-input"
+                  type="text"
                   required
-                  autoComplete="email"
-                  value={email}
+                  autoComplete="username"
+                  value={username}
                   onChange={(event) => {
-                    setEmail(event.target.value);
-                    if (fieldErrors.email) {
-                      setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                    setUsername(event.target.value);
+                    if (fieldErrors.username) {
+                      setFieldErrors((prev) => ({ ...prev, username: undefined }));
                     }
                   }}
-                  onBlur={() => handleBlurField('email')}
+                  onBlur={() => handleBlurField('username')}
                   className={`block w-full rounded-xl border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 ${
-                    fieldErrors.email
+                    fieldErrors.username
                       ? 'border-brand-error focus:ring-brand-error/20'
                       : 'border-brand-border focus:ring-brand-primary'
                   }`}
-                  placeholder="name@example.com"
+                  placeholder="Nhập tên đăng nhập của bạn"
                 />
               </div>
-              {fieldErrors.email && (
+              {fieldErrors.username && (
                 <p className="mt-1 text-[11px] font-semibold text-brand-error">
-                  {fieldErrors.email}
+                  {fieldErrors.username}
                 </p>
               )}
             </div>
