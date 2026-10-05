@@ -34,6 +34,10 @@ export interface Contact {
   lastCall: string;
 }
 
+export interface CallableContact extends Contact {
+  conversationId: number;
+}
+
 export interface Message {
   id: string;
   sender: 'user' | 'other' | 'system';

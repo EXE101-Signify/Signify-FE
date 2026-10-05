@@ -14,71 +14,18 @@ import {
   X,
 } from 'lucide-react';
 
-import type { CallLog, Contact, Screen } from '../types';
+import type { CallLog, CallableContact, Screen } from '../types';
 import AppLayout from '../layouts/AppLayout';
+import { conversationApi } from '../services/conversationApi';
+import { getStoredUser } from '../services/apiClient';
 
 interface DashboardProps {
   onNavigate: (screen: Screen) => void;
   onLogout: () => void;
-  onStartCall: (contact: Contact) => void;
+  onStartCall: (contact: CallableContact) => void;
+  callCreating: boolean;
+  callError: string | null;
 }
-
-const mockContacts: Contact[] = [
-  {
-    id: '1',
-    name: 'Minh Anh',
-    role: 'Bạn thân',
-    status: 'online',
-    avatar:
-      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=150',
-    lastCall: 'Hôm qua',
-  },
-  {
-    id: '2',
-    name: 'Bác sĩ Linh',
-    role: 'Bác sĩ gia đình',
-    status: 'online',
-    avatar:
-      'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=150',
-    lastCall: '3 ngày trước',
-  },
-  {
-    id: '3',
-    name: 'Thầy Hùng',
-    role: 'Giáo viên ký hiệu',
-    status: 'offline',
-    avatar:
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=150',
-    lastCall: 'Tuần trước',
-  },
-  {
-    id: '4',
-    name: 'Nam Phong',
-    role: 'Đồng nghiệp',
-    status: 'online',
-    avatar:
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150',
-    lastCall: '2 giờ trước',
-  },
-  {
-    id: '5',
-    name: 'SIGNIFY Support',
-    role: 'Hỗ trợ kỹ thuật',
-    status: 'online',
-    avatar:
-      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150',
-    lastCall: 'Chưa từng',
-  },
-  {
-    id: '6',
-    name: 'Lan Hương',
-    role: 'Gia đình',
-    status: 'offline',
-    avatar:
-      'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=150',
-    lastCall: '5 ngày trước',
-  },
-];
 
 const mockCallLogs: CallLog[] = [
   {
@@ -114,6 +61,8 @@ export default function Dashboard({
   onNavigate,
   onLogout,
   onStartCall,
+  callCreating,
+  callError,
 }: DashboardProps) {
   const location = useLocation();
   const locationState = location.state as { toastMessage?: string } | null;
@@ -134,7 +83,37 @@ export default function Dashboard({
   const [aiSignActive, setAiSignActive] = useState(true);
   const [voiceToSignActive, setVoiceToSignActive] = useState(true);
   const [avatar3dActive, setAvatar3dActive] = useState(true);
-  const [sosActivated, setSosActivated] = useState(false);
+  const [contacts, setContacts] = useState<CallableContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const currentUserId = getStoredUser()?.userId;
+    conversationApi.list().then((conversations) => {
+      if (!active) return;
+      setContacts(conversations.flatMap((conversation) => {
+        if (conversation.type !== 'PRIVATE' || !Number.isSafeInteger(conversation.conversationId)) return [];
+        const peer = conversation.participants.find((participant) => participant.userId !== currentUserId);
+        if (!peer || !currentUserId) return [];
+        return [{
+          id: String(peer.userId),
+          conversationId: conversation.conversationId,
+          name: peer.fullName || `Người dùng ${peer.userId}`,
+          role: 'Cuộc trò chuyện riêng',
+          status: 'offline' as const,
+          avatar: peer.avatar || '',
+          lastCall: '—',
+        }];
+      }));
+      setContactsError(null);
+    }).catch((error: unknown) => {
+      if (active) setContactsError(error instanceof Error ? error.message : 'Không thể tải cuộc trò chuyện.');
+    }).finally(() => {
+      if (active) setContactsLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
 
   const currentDate = new Intl.DateTimeFormat('vi-VN', {
     weekday: 'long',
@@ -143,24 +122,16 @@ export default function Dashboard({
     year: 'numeric',
   }).format(new Date());
 
-  const filteredContacts = mockContacts.filter(
+  const filteredContacts = contacts.filter(
     (contact) =>
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.role.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const handleSosTrigger = () => {
-    setSosActivated(true);
-
-    setTimeout(() => {
-      const emergencyContact =
-        mockContacts.find(
-          (contact) => contact.name === 'SIGNIFY Support',
-        ) ?? mockContacts[0];
-
-      onStartCall(emergencyContact);
-      setSosActivated(false);
-    }, 1800);
+    setActiveTab('contacts');
+    setContactsError('Chọn một cuộc trò chuyện riêng đã xác thực để bắt đầu cuộc gọi.');
+    document.getElementById('contacts-column')?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const handleContactsMenuClick = () => {
@@ -176,12 +147,8 @@ export default function Dashboard({
       'quick-call-select-recipient',
     ) as HTMLSelectElement | null;
 
-    const selectedContact =
-      mockContacts.find(
-        (contact) => contact.id === selectElement?.value,
-      ) ?? mockContacts[0];
-
-    onStartCall(selectedContact);
+    const selectedContact = contacts.find((contact) => String(contact.conversationId) === selectElement?.value) ?? contacts[0];
+    if (selectedContact) onStartCall(selectedContact);
   };
 
   return (
@@ -204,21 +171,10 @@ export default function Dashboard({
             id="emergency-sos-action-btn"
             type="button"
             onClick={handleSosTrigger}
-            disabled={sosActivated}
-            className={`flex items-center gap-2 rounded-2xl px-5 py-3 text-xs font-bold uppercase tracking-wider shadow-md transition-all ${
-              sosActivated
-                ? 'animate-bounce bg-brand-error text-white'
-                : 'cursor-pointer border border-brand-error-light bg-brand-error-light text-brand-error hover:bg-brand-error hover:text-white'
-            }`}
+            className="flex cursor-pointer items-center gap-2 rounded-2xl border border-brand-error-light bg-brand-error-light px-5 py-3 text-xs font-bold uppercase tracking-wider text-brand-error shadow-md transition-all hover:bg-brand-error hover:text-white"
           >
-            <ShieldAlert
-              className={`h-4 w-4 ${
-                sosActivated ? 'animate-spin' : ''
-              }`}
-            />
-            {sosActivated
-              ? 'ĐANG KẾT NỐI SOS...'
-              : 'KHẨN CẤP (SOS)'}
+            <ShieldAlert className="h-4 w-4" />
+            KHẨN CẤP (SOS)
           </button>
 
           <button
@@ -250,6 +206,11 @@ export default function Dashboard({
             >
               <X className="h-4 w-4" />
             </button>
+          </div>
+        )}
+        {(callError || contactsError) && (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800">
+            {callError || contactsError}
           </div>
         )}
 
@@ -419,7 +380,7 @@ export default function Dashboard({
                       : 'text-brand-text-muted hover:text-brand-primary'
                   }`}
                 >
-                  Danh bạ ({mockContacts.length})
+                  Danh bạ ({contacts.length})
                 </button>
 
                 <button
@@ -464,12 +425,12 @@ export default function Dashboard({
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="relative shrink-0">
-                          <img
+                          {contact.avatar ? <img
                             src={contact.avatar}
                             alt={contact.name}
                             className="h-11 w-11 rounded-full border border-brand-border object-cover"
                             referrerPolicy="no-referrer"
-                          />
+                          /> : <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-primary-light font-bold text-brand-primary">{contact.name.charAt(0)}</span>}
 
                           <span
                             className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white ${
@@ -501,6 +462,7 @@ export default function Dashboard({
                         id={`call-contact-btn-${contact.id}`}
                         type="button"
                         onClick={() => onStartCall(contact)}
+                        disabled={callCreating}
                         className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-xl bg-brand-primary px-3.5 py-2.5 text-xs font-bold text-white shadow-md shadow-brand-primary/10 transition-all hover:bg-brand-primary-hover active:scale-95"
                       >
                         <Video className="h-3.5 w-3.5" />
@@ -512,7 +474,7 @@ export default function Dashboard({
                   ))
                 ) : (
                   <div className="p-8 text-center text-xs font-bold text-brand-text-muted">
-                    Không tìm thấy liên hệ trùng khớp.
+                    {contactsLoading ? 'Đang tải cuộc trò chuyện...' : 'Không có cuộc trò chuyện riêng phù hợp.'}
                   </div>
                 )}
               </div>
@@ -590,13 +552,14 @@ export default function Dashboard({
 
                   <select
                     id="quick-call-select-recipient"
-                    defaultValue="1"
+                    defaultValue=""
                     className="block w-full rounded-xl border border-brand-border bg-brand-bg px-3 py-2.5 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
                   >
-                    {mockContacts.map((contact) => (
+                    <option value="" disabled>Chọn cuộc trò chuyện</option>
+                    {contacts.map((contact) => (
                       <option
-                        key={contact.id}
-                        value={contact.id}
+                        key={contact.conversationId}
+                        value={contact.conversationId}
                       >
                         {contact.name} ({contact.role})
                       </option>
@@ -652,6 +615,7 @@ export default function Dashboard({
                   id="quick-start-call-btn"
                   type="button"
                   onClick={handleQuickCall}
+                  disabled={callCreating || contacts.length === 0}
                   className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-brand-primary py-3.5 text-xs font-bold uppercase tracking-wider text-white shadow-md shadow-brand-primary/10 transition-all hover:bg-brand-primary-hover"
                 >
                   <Video className="h-4 w-4" />
