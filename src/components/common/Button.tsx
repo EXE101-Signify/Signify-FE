@@ -1,10 +1,21 @@
-import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import {
+  forwardRef,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { Loader2 } from 'lucide-react';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'outline'
+  | 'ghost'
+  | 'danger';
+
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
-export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   isLoading?: boolean;
@@ -15,21 +26,21 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-brand-primary text-white hover:bg-brand-primary-hover active:scale-[0.98] shadow-sm shadow-brand-primary/20',
+    'border border-brand-primary bg-brand-primary text-white hover:border-brand-primary-hover hover:bg-brand-primary-hover',
   secondary:
-    'bg-brand-secondary text-white hover:bg-brand-secondary-hover active:scale-[0.98] shadow-sm',
+    'border border-brand-secondary bg-brand-secondary text-white hover:border-brand-secondary-hover hover:bg-brand-secondary-hover',
   outline:
-    'border border-brand-border-high bg-white text-brand-text hover:bg-brand-bg hover:border-brand-primary hover:text-brand-primary active:scale-[0.98]',
+    'border border-brand-border-high bg-white text-brand-text hover:border-brand-text-muted hover:bg-brand-surface-container',
   ghost:
-    'bg-transparent text-brand-text-muted hover:bg-brand-primary-light/40 hover:text-brand-primary active:scale-[0.98]',
+    'border border-transparent bg-transparent text-brand-text-muted hover:bg-brand-surface-container hover:text-brand-text',
   danger:
-    'bg-brand-error text-white hover:bg-red-700 active:scale-[0.98] shadow-sm',
+    'border border-brand-error bg-brand-error text-white hover:border-red-700 hover:bg-red-700',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-xs font-semibold rounded-lg gap-1.5',
-  md: 'px-4 py-2.5 text-sm font-semibold rounded-xl gap-2',
-  lg: 'px-6 py-3.5 text-base font-bold rounded-xl gap-2.5',
+  sm: 'min-h-8 gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold',
+  md: 'min-h-10 gap-2 rounded-lg px-4 py-2 text-sm font-semibold',
+  lg: 'min-h-11 gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold',
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -48,26 +59,52 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     },
     ref,
   ) => {
+    const isDisabled = disabled || isLoading;
+
     return (
       <button
         ref={ref}
-        disabled={disabled || isLoading}
-        className={`inline-flex items-center justify-center font-sans transition-all duration-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:pointer-events-none disabled:opacity-50 ${
-          variantClasses[variant]
-        } ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+        disabled={isDisabled}
+        className={[
+          'inline-flex items-center justify-center whitespace-nowrap',
+          'transition-colors duration-150',
+          'focus-visible:outline-none focus-visible:ring-2',
+          'focus-visible:ring-brand-primary/30 focus-visible:ring-offset-2',
+          'disabled:pointer-events-none disabled:opacity-50',
+          variantClasses[variant],
+          sizeClasses[size],
+          fullWidth ? 'w-full' : '',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         {...props}
       >
         {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden="true" />
+          <Loader2
+            className="h-4 w-4 shrink-0 animate-spin"
+            aria-hidden="true"
+          />
         ) : (
-          leftIcon && <span className="shrink-0">{leftIcon}</span>
+          leftIcon && (
+            <span className="flex shrink-0 items-center" aria-hidden="true">
+              {leftIcon}
+            </span>
+          )
         )}
+
         <span>{children}</span>
-        {!isLoading && rightIcon && <span className="shrink-0">{rightIcon}</span>}
+
+        {!isLoading && rightIcon && (
+          <span className="flex shrink-0 items-center" aria-hidden="true">
+            {rightIcon}
+          </span>
+        )}
       </button>
     );
   },
 );
 
 Button.displayName = 'Button';
+
 export default Button;

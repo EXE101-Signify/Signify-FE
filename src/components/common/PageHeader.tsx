@@ -12,22 +12,24 @@ export default function PageHeader({
   actions,
 }: PageHeaderProps) {
   return (
-    <header className="border-b border-brand-border bg-white px-5 py-5 sm:px-8">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <header className="border-b border-brand-border bg-white px-8 py-5">
+      <div className="flex items-center justify-between gap-6">
         <div className="min-w-0">
-          <h1 className="text-xl font-black uppercase leading-tight text-brand-text sm:text-2xl">
+          <h1 className="truncate text-2xl font-semibold leading-tight tracking-[-0.02em] text-brand-text">
             {title}
           </h1>
 
           {subtitle && (
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-brand-text-muted">
+            <p className="mt-1 text-sm text-brand-text-muted">
               {subtitle}
             </p>
           )}
         </div>
 
         {actions && (
-          <div className="flex shrink-0 items-center gap-3">{actions}</div>
+          <div className="flex shrink-0 items-center gap-2">
+            {actions}
+          </div>
         )}
       </div>
     </header>
