@@ -9,6 +9,7 @@ import { getStoredUser } from '../services/apiClient';
 import { videoCallApi, type VideoCallRecord } from '../services/videoCallApi';
 import { subscribeToAiPredictions, type AiConnectionState } from '../services/aiPredictionStream';
 import type { AiPredictionEvent } from '../services/aiPrediction';
+import { useWebRtcCall } from '../hooks/useWebRtcCall';
 
 interface VideoCallProps {
   contact: Contact;
@@ -48,6 +49,8 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
   const [latestPrediction, setLatestPrediction] = useState<AiPredictionEvent | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
   const isReceiver = getStoredUser()?.userId === call.receiverId;
+  const { localVideoRef, remoteVideoRef, state: mediaState, error: mediaError, remoteVideoReady } =
+    useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
 
   useEffect(() => {
     setLatestPrediction(null);
@@ -80,10 +83,6 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
     }
   };
 
-  // Webcam reference
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-
   // joint coordinate simulation variables
   const [skeletonWave, setSkeletonWave] = useState(0);
 
@@ -93,40 +92,6 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
     { value: 'normal', label: 'Bình thường (1.0x)' },
     { value: 'fast', label: 'Nhanh (1.5x)' }
   ];
-
-  // Request webcam access safely with fallback for sandboxed iframes
-  useEffect(() => {
-    if (cameraActive && typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        })
-        .catch(err => {
-          console.warn('Real webcam not found or permission denied, using mock stream representation', err);
-        });
-    } else {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    }
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [cameraActive]);
 
   // Handle CSS-animated skeleton joint dots
   useEffect(() => {
@@ -230,7 +195,7 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
           </div>
         </div>
 
-        {/* Video feed core canvas overlay with mockup signing lady */}
+        {/* Remote participant media */}
         <div id="call-video-grid" className="my-4 flex-1 bg-neutral-950 rounded-[24px] overflow-hidden relative border border-white/5 shadow-2xl flex items-center justify-center min-h-[460px]">
           <div id="ai-sign-prediction" aria-live="polite" className="absolute left-6 top-6 z-20 rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md">
             <span className="block text-[10px] font-bold uppercase tracking-widest text-brand-secondary">AI Sign</span>
@@ -243,36 +208,20 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
             {latestPrediction && aiConnectionState === 'offline' && <span className="block text-[10px] text-amber-300">AI tạm ngắt kết nối</span>}
           </div>
           
-          {/* Main Feed: Deaf caller signing */}
-          <img 
-            id="deaf-caller-main-video"
-            src="https://images.unsplash.com/photo-1543269865-cbf427effbad?auto=format&fit=crop&q=80&w=640" 
-            alt="Deaf signer caller" 
-            className="absolute inset-0 w-full h-full object-cover opacity-80"
-            referrerPolicy="no-referrer"
+          <video
+            id="remote-call-video"
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
           />
-
-          {/* AI Finger-mesh landmark mockup mapping points (Interactive canvas effect) */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-            {/* Draw nodes linking fingers to imitate real hand mesh scanning */}
-            <g transform="translate(180, 200)">
-              {/* Wrist node */}
-              <circle cx="100" cy="200" r="5" fill="#ffffff" className="animate-ping" />
-              {/* Joint links paths */}
-              <path d="M 100 200 L 70 150 L 50 110" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              <path d="M 100 200 L 95 130 L 90 80" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              <path d="M 100 200 L 120 135 L 130 90" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              {/* Finger Tips nodes */}
-              <circle cx="50" cy="110" r="4.5" fill="#34d399" />
-              <circle cx="90" cy="80" r="4.5" fill="#34d399" />
-              <circle cx="130" cy="90" r="4.5" fill="#34d399" />
-              {/* Face landmarks mock */}
-              <circle cx="100" cy="-60" r="3.5" fill="#ffffff" />
-              <circle cx="85" cy="-70" r="2.5" fill="#ffffff" />
-              <circle cx="115" cy="-70" r="2.5" fill="#ffffff" />
-              <path d="M 85 -50 Q 100 -40 115 -50" stroke="#ffffff" strokeWidth="1.5" fill="none" />
-            </g>
-          </svg>
+          {!remoteVideoReady && <div className="absolute inset-0 flex items-center justify-center bg-neutral-950 text-sm text-neutral-300">
+            {mediaError || (call.status !== 'ACCEPTED' ? 'Chờ cuộc gọi được chấp nhận' : 'Đang chờ video từ người bên kia')}
+          </div>}
+          <div role="status" aria-live="polite" className="absolute right-4 bottom-4 z-20 rounded-lg bg-neutral-900/85 px-3 py-1.5 text-xs text-white">
+            {mediaState === 'connected' ? 'Đã kết nối' : mediaState === 'failed' ? 'Kết nối thất bại'
+              : mediaState === 'disconnected' ? 'Mất kết nối' : mediaState === 'connecting' ? 'Đang kết nối...' : 'Chưa kết nối'}
+          </div>
 
           {/* Floating Subtitle Overlay Card */}
           <div className="absolute inset-x-8 bottom-6 z-20 flex justify-center">
@@ -339,20 +288,19 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
           )}
 
           {/* User's PIP (Live WebCam Stream if active) */}
-          {cameraActive && (
-            <div id="pip-user-webcam" className="absolute top-6 right-6 w-32 sm:w-40 aspect-[4/3] bg-neutral-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden relative">
+          <div id="pip-user-webcam" className="absolute top-6 right-6 w-32 sm:w-40 aspect-[4/3] bg-neutral-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden relative">
               <video 
-                ref={videoRef} 
+                ref={localVideoRef}
                 autoPlay 
                 playsInline 
                 muted 
-                className="w-full h-full object-cover transform -scale-x-100"
+                className={`w-full h-full object-cover transform -scale-x-100 ${cameraActive ? '' : 'invisible'}`}
               />
+              {!cameraActive && <span className="absolute inset-0 flex items-center justify-center text-xs text-neutral-300">Camera đã tắt</span>}
               <span className="absolute bottom-2 left-2 bg-black/80 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-mono">
                 Tôi (Webcam)
               </span>
-            </div>
-          )}
+          </div>
 
         </div>
 

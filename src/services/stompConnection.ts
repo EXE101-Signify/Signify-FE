@@ -126,3 +126,14 @@ export function subscribeToStomp(
     }
   };
 }
+
+/** Signaling is transient; callers retry when the shared STOMP connection is offline. */
+export function publishToStomp(destination: string, body: unknown): boolean {
+  if (!client?.connected || connectionState !== 'online') return false;
+  try {
+    client.publish({ destination, body: JSON.stringify(body) });
+    return true;
+  } catch {
+    return false;
+  }
+}

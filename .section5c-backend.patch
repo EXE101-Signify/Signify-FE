@@ -1,0 +1,153 @@
+diff --git a/src/main/java/fptu/exe202/signify/signifybe/features/chat/api/ChatStompAuthorization.java b/src/main/java/fptu/exe202/signify/signifybe/features/chat/api/ChatStompAuthorization.java
+--- a/src/main/java/fptu/exe202/signify/signifybe/features/chat/api/ChatStompAuthorization.java
++++ b/src/main/java/fptu/exe202/signify/signifybe/features/chat/api/ChatStompAuthorization.java
+@@ -30,8 +30,10 @@ public class ChatStompAuthorization implements ChannelInterceptor {
+     static Pattern SUBSCRIPTION = Pattern.compile("/user/queue/conversations/([1-9][0-9]*)");
+     static Pattern CALL_SUBSCRIPTION = Pattern.compile("/user/queue/calls/([1-9][0-9]*)");
++    static Pattern WEBRTC_SUBSCRIPTION = Pattern.compile("/user/queue/calls/([1-9][0-9]*)/webrtc");
+ 
+     static Pattern TYPING = Pattern.compile("/app/conversations/([1-9][0-9]*)/typing");
++    static Pattern WEBRTC_SEND = Pattern.compile("/app/calls/([1-9][0-9]*)/webrtc");
+@@ -81,7 +83,9 @@ public class ChatStompAuthorization implements ChannelInterceptor {
+                 return message;
+             if (command == StompCommand.SUBSCRIBE) {
+                 var callSubscription = CALL_SUBSCRIPTION.matcher(destination == null ? "" : destination);
+-                if (callSubscription.matches()) {
++                var webrtcSubscription = WEBRTC_SUBSCRIPTION.matcher(destination == null ? "" : destination);
++                if (callSubscription.matches() || webrtcSubscription.matches()) {
+                     try {
+-                        calls.validateActiveCall(Long.valueOf(callSubscription.group(1)), user);
++                        calls.validateActiveCall(Long.valueOf(callSubscription.matches() ? callSubscription.group(1) : webrtcSubscription.group(1)), user);
+                     } catch (NumberFormatException | VideoCallException ex) {
+                         throw new AccessDeniedException("Call destination denied");
+@@ -90,6 +94,16 @@ public class ChatStompAuthorization implements ChannelInterceptor {
+                     return message;
+                 }
+             }
++            if (command == StompCommand.SEND) {
++                var webrtcSend = WEBRTC_SEND.matcher(destination == null ? "" : destination);
++                if (webrtcSend.matches()) {
++                    try {
++                        calls.validateActiveCall(Long.valueOf(webrtcSend.group(1)), user);
++                    } catch (NumberFormatException | VideoCallException ex) {
++                        throw new AccessDeniedException("Call destination denied");
++                    }
++                    return message;
++                }
++            }
+             if (command == StompCommand.SEND && "/app/presence/heartbeat".equals(destination))
+                 return message;
+diff --git a/src/main/java/fptu/exe202/signify/signifybe/features/call/api/WebRtcSignalingController.java b/src/main/java/fptu/exe202/signify/signifybe/features/call/api/WebRtcSignalingController.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/fptu/exe202/signify/signifybe/features/call/api/WebRtcSignalingController.java
+@@ -0,0 +1,27 @@
++package fptu.exe202.signify.signifybe.features.call.api;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import fptu.exe202.signify.signifybe.features.auth.domain.CurrentUser;
++import fptu.exe202.signify.signifybe.features.call.application.WebRtcSignalingService;
++import org.springframework.messaging.handler.annotation.DestinationVariable;
++import org.springframework.messaging.handler.annotation.MessageMapping;
++import org.springframework.messaging.handler.annotation.Payload;
++import org.springframework.stereotype.Controller;
++
++import java.security.Principal;
++
++@Controller
++public class WebRtcSignalingController {
++    private final WebRtcSignalingService signaling;
++
++    public WebRtcSignalingController(WebRtcSignalingService signaling) {
++        this.signaling = signaling;
++    }
++
++    @MessageMapping("/calls/{callId}/webrtc")
++    public void relay(@DestinationVariable long callId, @Payload JsonNode request, Principal principal) {
++        signaling.relay(callId, principal instanceof CurrentUser user ? user : null, request);
++    }
++}
+diff --git a/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalEvent.java b/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalEvent.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalEvent.java
+@@ -0,0 +1,9 @@
++package fptu.exe202.signify.signifybe.features.call.application;
++
++import com.fasterxml.jackson.databind.JsonNode;
++
++/** Transient, call-scoped signaling metadata; media flows directly between browsers. */
++public record WebRtcSignalEvent(String eventId, String type, long callId, long senderId,
++                                long receiverId, JsonNode payload, long timestamp) { }
+diff --git a/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalingService.java b/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalingService.java
+new file mode 100644
+--- /dev/null
++++ b/src/main/java/fptu/exe202/signify/signifybe/features/call/application/WebRtcSignalingService.java
+@@ -0,0 +1,91 @@
++package fptu.exe202.signify.signifybe.features.call.application;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import fptu.exe202.signify.signifybe.features.auth.domain.CurrentUser;
++import fptu.exe202.signify.signifybe.features.call.domain.VideoCall;
++import org.springframework.messaging.simp.SimpMessagingTemplate;
++import org.springframework.stereotype.Service;
++
++import java.time.Clock;
++import java.util.Set;
++import java.util.UUID;
++
++@Service
++public class WebRtcSignalingService {
++    private static final Set<String> TYPES = Set.of("WEBRTC_READY", "WEBRTC_OFFER", "WEBRTC_ANSWER", "WEBRTC_ICE_CANDIDATE");
++    private final VideoCallService calls;
++    private final SimpMessagingTemplate messaging;
++    private final Clock clock;
++
++    public WebRtcSignalingService(VideoCallService calls, SimpMessagingTemplate messaging, Clock clock) {
++        this.calls = calls;
++        this.messaging = messaging;
++        this.clock = clock;
++    }
++
++    public void relay(long callId, CurrentUser actor, JsonNode request) {
++        VideoCall call = calls.validateActiveCall(callId, actor);
++        if (request == null || !request.isObject() || request.size() != 2
++                || !request.has("type") || !request.has("payload"))
++            throw new IllegalArgumentException("Invalid WebRTC signal");
++        String type = request.path("type").asText(null);
++        JsonNode payload = request.path("payload");
++        if (!TYPES.contains(type) || !validPayload(type, payload))
++            throw new IllegalArgumentException("Invalid WebRTC signal");
++        long senderId = actor.userId();
++        boolean caller = senderId == call.getCallerId();
++        if (("WEBRTC_OFFER".equals(type) && !caller)
++                || (("WEBRTC_READY".equals(type) || "WEBRTC_ANSWER".equals(type)) && caller))
++            throw new IllegalArgumentException("Invalid WebRTC signaling role");
++        long receiverId = caller ? call.getReceiverId() : call.getCallerId();
++        // A call can end after the first authorization check and before forwarding.
++        calls.validateActiveCall(callId, actor);
++        WebRtcSignalEvent event = new WebRtcSignalEvent(UUID.randomUUID().toString(), type, callId,
++                senderId, receiverId, payload, clock.millis());
++        messaging.convertAndSendToUser(Long.toString(receiverId), "/queue/calls/" + callId + "/webrtc", event);
++    }
++
++    private static boolean validPayload(String type, JsonNode payload) {
++        if (!payload.isObject()) return false;
++        if ("WEBRTC_READY".equals(type)) return payload.size() == 0;
++        if ("WEBRTC_OFFER".equals(type) || "WEBRTC_ANSWER".equals(type)) {
++            return payload.size() == 2 && type.substring(7).toLowerCase().equals(payload.path("type").asText())
++                    && isText(payload.path("sdp"), 48_000);
++        }
++        if (payload.size() < 3 || payload.size() > 4 || !isText(payload.path("candidate"), 4096)
++                || !payload.has("sdpMid") || !payload.has("sdpMLineIndex")) return false;
++        if (!payload.path("sdpMid").isNull() && !payload.path("sdpMid").isTextual()) return false;
++        if (!payload.path("sdpMLineIndex").isNull()
++                && (!payload.path("sdpMLineIndex").canConvertToInt() || payload.path("sdpMLineIndex").asInt() < 0)) return false;
++        return !payload.has("usernameFragment") || payload.path("usernameFragment").isNull()
++                || payload.path("usernameFragment").isTextual();
++    }
++
++    private static boolean isText(JsonNode node, int maxLength) {
++        return node.isTextual() && !node.asText().isBlank() && node.asText().length() <= maxLength;
++    }
++}
