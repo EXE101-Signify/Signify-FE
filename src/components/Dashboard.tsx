@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Bell,
   Clock,
+  Info,
   Languages,
   Phone,
   Search,
@@ -9,10 +11,12 @@ import {
   Sparkles,
   Users,
   Video,
+  X,
 } from 'lucide-react';
 
 import type { CallLog, Contact, Screen } from '../types';
 import AppLayout from '../layouts/AppLayout';
+import { getStoredUser } from '../services/apiClient';
 
 interface DashboardProps {
   onNavigate: (screen: Screen) => void;
@@ -112,6 +116,18 @@ export default function Dashboard({
   onLogout,
   onStartCall,
 }: DashboardProps) {
+  const location = useLocation();
+  const locationState = location.state as { toastMessage?: string } | null;
+  const [toastBanner, setToastBanner] = useState<string | null>(
+    locationState?.toastMessage || null,
+  );
+
+  useEffect(() => {
+    if (locationState?.toastMessage) {
+      setToastBanner(locationState.toastMessage);
+    }
+  }, [location.state]);
+
   const [activeTab, setActiveTab] = useState<'contacts' | 'recent'>(
     'contacts',
   );
@@ -169,13 +185,18 @@ export default function Dashboard({
     onStartCall(selectedContact);
   };
 
+  const currentUser = getStoredUser();
+  const displayName = currentUser
+    ? ([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username)
+    : 'Bạn';
+
   return (
     <AppLayout
       activeScreen="dashboard"
       title={
         <>
           Chào{' '}
-          <span className="text-brand-primary">Thanh Liêm</span>,
+          <span className="text-brand-primary">{displayName}</span>,
           chúc ngày tốt lành!
         </>
       }
@@ -222,6 +243,150 @@ export default function Dashboard({
         id="dashboard-body"
         className="space-y-8 p-5 sm:p-8"
       >
+        {/* Trạng thái AI */}
+        <div
+          id="ai-status-row"
+          className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-brand-border bg-white p-4 shadow-sm"
+        >
+          <span className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-brand-primary">
+            <Sparkles className="h-4 w-4" />
+            Trạng thái AI kết nối
+          </span>
+
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  aiSignActive
+                    ? 'animate-pulse bg-brand-secondary'
+                    : 'bg-brand-border-high'
+                }`}
+              />
+              <span className="text-xs font-bold text-brand-text-muted">
+                Nhận diện cử chỉ:{' '}
+                {aiSignActive ? 'KÍCH HOẠT' : 'TẮT'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  voiceToSignActive
+                    ? 'animate-pulse bg-brand-secondary'
+                    : 'bg-brand-border-high'
+                }`}
+              />
+              <span className="text-xs font-bold text-brand-text-muted">
+                Giọng nói → Ký hiệu:{' '}
+                {voiceToSignActive ? 'SẴN SÀNG' : 'TẮT'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div
+                className={`h-2 w-2 rounded-full ${
+                  avatar3dActive
+                    ? 'bg-brand-secondary'
+                    : 'bg-brand-border-high'
+                }`}
+              />
+              <span className="text-xs font-bold text-brand-text-muted">
+                Nhân vật ảo 3D:{' '}
+                {avatar3dActive ? 'CHUẨN BỊ' : 'TẮT'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Thống kê */}
+        <section
+          id="stats-counter-cards"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4"
+        >
+          <div className="space-y-4 rounded-2xl border border-brand-border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-text-muted">
+                Cuộc gọi tháng này
+              </span>
+
+              <div className="rounded-xl bg-brand-primary-light p-2 text-brand-primary">
+                <Phone className="h-4.5 w-4.5" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl font-black text-brand-text">
+                47
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-secondary">
+                → +12% so với tháng trước
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-brand-border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-text-muted">
+                Giờ giao tiếp
+              </span>
+
+              <div className="rounded-xl bg-brand-primary-light p-2 text-brand-primary">
+                <Clock className="h-4.5 w-4.5" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl font-black text-brand-text">
+                18.5h
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-secondary">
+                → Không lỗi kết nối
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-brand-border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-text-muted">
+                Danh bạ liên kết
+              </span>
+
+              <div className="rounded-xl bg-brand-primary-light p-2 text-brand-primary">
+                <Users className="h-4.5 w-4.5" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl font-black text-brand-text">
+                24
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-secondary">
+                → Thêm 2 liên hệ tuần này
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 rounded-2xl border border-brand-border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-text-muted">
+                Ký hiệu nhận dạng
+              </span>
+
+              <div className="rounded-xl bg-brand-primary-light p-2 text-brand-primary">
+                <Languages className="h-4.5 w-4.5" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl font-black text-brand-text">
+                1.240
+              </div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-brand-secondary">
+                → Từ điển học máy hỗ trợ
+              </p>
+            </div>
+          </div>
+        </section>
 
         <div
           id="dashboard-split"

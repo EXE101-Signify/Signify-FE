@@ -2,7 +2,28 @@
  * SignBridge TypeScript Type Definitions
  */
 
-export type Screen = 'landing' | 'login' | 'dashboard' | 'call' | 'languages';
+export type Screen =
+  | 'landing'
+  | 'login'
+  | 'dashboard'
+  | 'call'
+  | 'languages'
+  | 'profile'
+  | 'admin-users';
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: 'admin' | 'user' | 'moderator';
+  plan: 'free' | 'pro' | 'enterprise';
+  avatar: string;
+  bio: string;
+  status: 'active' | 'suspended' | 'pending';
+  joinedDate: string;
+  lastActive: string;
+}
 
 export interface Contact {
   id: string;

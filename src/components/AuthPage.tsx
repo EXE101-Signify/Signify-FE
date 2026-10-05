@@ -10,7 +10,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import type { Screen } from '../types';
 import AuthShell from './auth/AuthShell';
+import GoogleButton from './auth/GoogleButton';
+import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
 import { Button, Input } from './common';
+import { validatePassword } from '../utils/validation';
+import { authApi } from '../services/authApi';
+import { setStoredSession, type UserDTO, type TokenDTO } from '../services/apiClient';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
@@ -28,24 +33,95 @@ export default function AuthPage({
   const location = useLocation();
   const locationState = location.state as LoginLocationState | null;
 
-  const [email, setEmail] = useState(
-    'thanhliem@Signify.vn',
-  );
-  const [password, setPassword] = useState('••••••••');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{
+    username?: string;
+    password?: string;
+  }>({});
+  const [globalError, setGlobalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleBlurField = (field: 'username' | 'password') => {
+    setFieldErrors((prev) => {
+      const updated = { ...prev };
+      if (field === 'username') {
+        if (!username.trim()) updated.username = 'Vui lòng nhập tên đăng nhập.';
+        else delete updated.username;
+      }
+      if (field === 'password') {
+        const err = validatePassword(password);
+        if (err) updated.password = err;
+        else delete updated.password;
+      }
+      return updated;
+    });
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setGlobalError('');
+
+    const usernameErr = !username.trim() ? 'Vui lòng nhập tên đăng nhập.' : null;
+    const passErr = password === '••••••••' ? null : validatePassword(password);
+
+    if (usernameErr || passErr) {
+      setFieldErrors({
+        username: usernameErr || undefined,
+        password: passErr || undefined,
+      });
+      setGlobalError('Thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại.');
+      return;
+    }
+
+    setFieldErrors({});
     setIsSubmitting(true);
 
-    window.setTimeout(() => {
+    try {
+      const res = await authApi.login({
+        username: username.trim(),
+        password: password,
+      });
+
+      if (res.success) {
+        onLoginSuccess();
+      } else {
+        setGlobalError(res.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+      }
+    } catch (err: any) {
+      setGlobalError(
+        err.message || 'Đăng nhập không thành công. Mật khẩu hoặc tên đăng nhập không đúng.'
+      );
+    } finally {
       setIsSubmitting(false);
-      onLoginSuccess();
-    }, 800);
+    }
+  };
+
+  const handleGoogleSuccess = (userInfo: GoogleUserInfo) => {
+    const userDTO: UserDTO = {
+      userId: Date.now(),
+      username: userInfo.email.split('@')[0],
+      role: 'USER',
+      emailVerified: true,
+      email: userInfo.email,
+      firstName: userInfo.name.split(' ')[0],
+      lastName: userInfo.name.split(' ').slice(1).join(' '),
+      avatar: userInfo.avatar,
+    };
+    const tokenDTO: TokenDTO = {
+      accessToken: `mock_gg_access_token_${Date.now()}`,
+      refreshToken: `mock_gg_refresh_token_${Date.now()}`,
+      tokenType: 'Bearer',
+      accessExpiresAt: Date.now() + 900000,
+      refreshExpiresAt: Date.now() + 604800000,
+    };
+    setStoredSession(tokenDTO, userDTO);
+    onLoginSuccess();
   };
 
   const handleQuickLogin = () => {
-    setEmail('thanhliem@Signify.vn');
+    setUsername('thanhliem');
     setPassword('••••••••');
     onLoginSuccess();
   };
@@ -70,7 +146,17 @@ export default function AuthPage({
         </div>
       )}
 
-      {/* <section className="mb-6 border-b border-brand-border pb-6">
+      {globalError && (
+        <div
+          role="alert"
+          className="mb-5 flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-600"
+        >
+          <span className="font-medium">{globalError}</span>
+        </div>
+      )}
+
+      {/* Quick Sandbox Login Box */}
+      <section className="mb-6 border-b border-brand-border pb-6">
         <div className="flex items-start gap-3">
           <UserCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
 
@@ -95,19 +181,42 @@ export default function AuthPage({
         >
           Tiếp tục với tài khoản Thanh Liêm
         </Button>
-      </section> */}
+      </section>
+
+      {/* Google Sign In Option */}
+      <div className="mb-6">
+        <GoogleButton
+          label="Tiếp tục bằng Google"
+          onClick={() => setIsGoogleModalOpen(true)}
+        />
+      </div>
+
+      <div className="my-6 flex items-center gap-3">
+        <span className="h-px flex-1 bg-brand-border" />
+        <span className="text-xs text-brand-text-muted">
+          hoặc đăng nhập bằng tài khoản
+        </span>
+        <span className="h-px flex-1 bg-brand-border" />
+      </div>
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <Input
-          id="auth-email-input"
-          label="Địa chỉ email"
-          type="email"
+          id="auth-username-input"
+          label="Tên đăng nhập"
+          type="text"
           required
-          autoComplete="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="name@example.com"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => {
+            setUsername(event.target.value);
+            if (fieldErrors.username) {
+              setFieldErrors((prev) => ({ ...prev, username: undefined }));
+            }
+          }}
+          onBlur={() => handleBlurField('username')}
+          placeholder="Nhập tên đăng nhập của bạn"
           leftIcon={<Mail className="h-4 w-4" />}
+          error={fieldErrors.username}
         />
 
         <Input
@@ -117,9 +226,16 @@ export default function AuthPage({
           required
           autoComplete="current-password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Nhập mật khẩu"
+          onChange={(event) => {
+            setPassword(event.target.value);
+            if (fieldErrors.password) {
+              setFieldErrors((prev) => ({ ...prev, password: undefined }));
+            }
+          }}
+          onBlur={() => handleBlurField('password')}
+          placeholder="••••••••"
           leftIcon={<Lock className="h-4 w-4" />}
+          error={fieldErrors.password}
         />
 
         <div className="flex items-center justify-between gap-4">
@@ -158,34 +274,6 @@ export default function AuthPage({
         </Button>
       </form>
 
-      <div className="my-6 flex items-center gap-3">
-        <span className="h-px flex-1 bg-brand-border" />
-        <span className="text-xs text-brand-text-muted">
-          hoặc
-        </span>
-        <span className="h-px flex-1 bg-brand-border" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          id="oauth-option-google"
-          type="button"
-          variant="outline"
-          onClick={onLoginSuccess}
-        >
-          Google
-        </Button>
-
-        <Button
-          id="oauth-option-apple"
-          type="button"
-          variant="outline"
-          onClick={onLoginSuccess}
-        >
-          Apple ID
-        </Button>
-      </div>
-
       <p className="mt-6 border-t border-brand-border pt-5 text-center text-sm text-brand-text-muted">
         Chưa có tài khoản?{' '}
         <button
@@ -196,6 +284,13 @@ export default function AuthPage({
           Đăng ký ngay
         </button>
       </p>
+
+      {/* Google Login Modal */}
+      <GoogleAuthModal
+        isOpen={isGoogleModalOpen}
+        onClose={() => setIsGoogleModalOpen(false)}
+        onSuccess={handleGoogleSuccess}
+      />
     </AuthShell>
   );
 }

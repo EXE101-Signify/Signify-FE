@@ -4,27 +4,40 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button, Input } from '../common';
 import AuthShell from './AuthShell';
+import { emailApi } from '../../services/emailApi';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setError('');
     setIsSubmitting(true);
 
-    window.setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await emailApi.sendForgotPasswordOtp(email);
 
-      navigate('/verify-otp', {
-        state: {
-          flow: 'reset-password',
-          email,
-        },
-      });
-    }, 700);
+      if (res.success) {
+        navigate('/verify-otp', {
+          state: {
+            flow: 'reset-password',
+            email,
+          },
+        });
+      } else {
+        setError(res.message || 'Không tìm thấy tài khoản với email này.');
+      }
+    } catch (err: any) {
+      setError(
+        err.message || 'Không tìm thấy tài khoản hoặc có lỗi xảy ra. Vui lòng kiểm tra lại email.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -44,11 +57,21 @@ export default function ForgotPasswordPage() {
             </h2>
 
             <p className="mt-1 text-sm leading-5 text-brand-text-muted">
-              Nhập email đã dùng để đăng ký Signify.
+              Nhập email đã đăng ký. Chúng tôi sẽ gửi mã OTP để xác minh
+              tài khoản.
             </p>
           </div>
         </div>
       </header>
+
+      {error && (
+        <div
+          role="alert"
+          className="mb-5 flex items-start gap-2.5 rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-600"
+        >
+          <span className="font-medium">{error}</span>
+        </div>
+      )}
 
       <form className="space-y-5" onSubmit={handleSubmit}>
         <Input

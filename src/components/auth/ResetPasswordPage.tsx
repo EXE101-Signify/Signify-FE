@@ -8,9 +8,11 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { Button, Input } from '../common';
 import AuthShell from './AuthShell';
+import { emailApi } from '../../services/emailApi';
 
 interface ResetPasswordRouteState {
   email: string;
+  otp?: string;
   verified: boolean;
 }
 
@@ -36,7 +38,7 @@ export default function ResetPasswordPage() {
     return null;
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
 
@@ -52,6 +54,7 @@ export default function ResetPasswordPage() {
 
     setIsSubmitting(true);
 
+    // Mock API cập nhật mật khẩu mới.
     window.setTimeout(() => {
       setIsSubmitting(false);
 

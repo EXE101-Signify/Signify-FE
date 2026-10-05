@@ -58,12 +58,20 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
     } else {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
     }
 
     return () => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
     };
   }, [cameraActive]);
@@ -137,7 +145,7 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
   };
 
   return (
-    <div id="videocall-room-root" className="min-h-screen bg-neutral-900 text-white font-sans flex flex-col md:flex-row overflow-hidden relative">
+    <div id="videocall-room-root" className="h-screen bg-neutral-900 text-white font-sans flex flex-col md:flex-row overflow-y-auto md:overflow-hidden relative">
       
       {/* 1. Main Video call stage (Left & Center) */}
       <div id="video-stage" className="flex-1 flex flex-col justify-between p-6 relative">

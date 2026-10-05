@@ -20,7 +20,11 @@ import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
 import RegisterPage from './components/auth/RegisterPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import VerifyOtpPage from './components/auth/VerifyOtpPage';
+import ProfilePage from './components/profile/ProfilePage';
+import AdminUserListPage from './components/admin/AdminUserListPage';
 import { BrandLogo, Button } from './components/common';
+import { authApi } from './services/authApi';
+import { clearStoredSession } from './services/apiClient';
 
 import type { Contact, Screen } from './types';
 
@@ -89,15 +93,12 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return localStorage.getItem('signbridge_auth') === 'true';
+  });
+
   const [activeCallContact, setActiveCallContact] =
     useState<Contact | null>(null);
-
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () =>
-      window.sessionStorage.getItem(
-        'signify-authenticated',
-      ) === 'true',
-  );
 
   const screenToPath: Record<Screen, string> = {
     landing: '/login',
@@ -105,6 +106,8 @@ export default function App() {
     dashboard: '/dashboard',
     call: '/call',
     languages: '/languages',
+    profile: '/profile',
+    'admin-users': '/admin/users',
   };
 
   const handleNavigate = (screen: Screen) => {
@@ -112,20 +115,13 @@ export default function App() {
   };
 
   const handleLoginSuccess = () => {
-    window.sessionStorage.setItem(
-      'signify-authenticated',
-      'true',
-    );
-
+    localStorage.setItem('signbridge_auth', 'true');
     setIsAuthenticated(true);
     navigate('/dashboard', { replace: true });
   };
 
   const handleLogout = () => {
-    window.sessionStorage.removeItem(
-      'signify-authenticated',
-    );
-
+    authApi.logout().catch(() => clearStoredSession());
     setIsAuthenticated(false);
     setActiveCallContact(null);
     navigate('/login', { replace: true });
@@ -262,6 +258,40 @@ export default function App() {
           />
 
           <Route
+            path="/profile"
+            element={
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ProfilePage
+                  onNavigate={handleNavigate}
+                  onLogout={handleLogout}
+                />
+              </motion.div>
+            }
+          />
+
+          <Route
+            path="/admin/users"
+            element={
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AdminUserListPage
+                  onNavigate={handleNavigate}
+                  onLogout={handleLogout}
+                />
+              </motion.div>
+            }
+          />
+
+          <Route
             path="/call"
             element={
               <ProtectedRoute
@@ -289,7 +319,14 @@ export default function App() {
                     />
                   </motion.div>
                 ) : (
-                  <Navigate to="/dashboard" replace />
+                  <Navigate
+                    to="/dashboard"
+                    replace
+                    state={{
+                      toastMessage:
+                        'Vui lòng chọn một liên hệ từ danh bạ để bắt đầu cuộc gọi video!',
+                    }}
+                  />
                 )}
               </ProtectedRoute>
             }
