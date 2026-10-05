@@ -12,14 +12,16 @@ export const mockChatConversations: ChatConversationItem[] = [
     time: '10:24',
     unread: 2,
     pinned: true,
+    typing: true,
+    hasMoreMessages: true,
     messages: [
-      { id: 'm1', sender: 'other', content: 'Chào Nguyên, hôm nay bạn thế nào?', time: '10:18' },
-      { id: 'm2', sender: 'me', content: 'Mình ổn, đang thử giao diện Signify mới nè.', time: '10:20', status: 'seen' },
+      { id: 'm1', sender: 'other', content: 'Chào Nguyên, hôm nay bạn thế nào?', time: '10:18', reactions: [{ type: 'LIKE', count: 1, reactedByMe: true }] },
+      { id: 'm2', sender: 'me', content: 'Mình ổn, đang thử giao diện Signify mới nè.', time: '10:20', status: 'seen', edited: true },
       { id: 'm3', sender: 'other', content: 'Trông dễ dùng đó. Chiều nay mình gọi video nhé!', time: '10:24' },
     ],
     sharedFiles: [
-      { id: 'f1', name: 'tai-lieu-ngon-ngu-ky-hieu.pdf', meta: '2,4 MB · Hôm qua' },
-      { id: 'f2', name: 'lich-hoc-thang-10.docx', meta: '860 KB · 02/10' },
+      { id: 'f1', name: 'tai-lieu-ngon-ngu-ky-hieu.pdf', mimeType: 'application/pdf', size: 2516582, meta: '2,4 MB · Hôm qua' },
+      { id: 'f2', name: 'bang-chu-cai-ky-hieu.png', mimeType: 'image/png', size: 880640, meta: '860 KB · 02/10', url: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&q=80&w=900' },
     ],
   },
   {
@@ -36,7 +38,7 @@ export const mockChatConversations: ChatConversationItem[] = [
       { id: 'm4', sender: 'other', content: 'Tôi đã gửi lịch hẹn cho bạn.', time: '09:12' },
       { id: 'm5', sender: 'me', content: 'Cảm ơn bác sĩ, tôi đã nhận được rồi ạ.', time: '09:15', status: 'seen' },
     ],
-    sharedFiles: [{ id: 'f3', name: 'lich-hen.pdf', meta: '340 KB · Hôm nay' }],
+    sharedFiles: [{ id: 'f3', name: 'lich-hen.pdf', mimeType: 'application/pdf', size: 348160, meta: '340 KB · Hôm nay' }],
   },
   {
     id: '3',
@@ -52,15 +54,15 @@ export const mockChatConversations: ChatConversationItem[] = [
     messages: [
       { id: 'm6', sender: 'other', content: 'Bài tập tuần này nằm trong file nhé.', time: '20:36' },
     ],
-    sharedFiles: [{ id: 'f4', name: 'bai-tap-tuan-4.pdf', meta: '1,1 MB · Hôm qua' }],
+    sharedFiles: [{ id: 'f4', name: 'bai-tap-tuan-4.pdf', mimeType: 'application/pdf', size: 1153434, meta: '1,1 MB · Hôm qua' }],
   },
   {
     id: '4',
     name: 'Nam Phong',
     role: 'Đồng nghiệp',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=160',
-    presence: 'busy',
-    lastSeen: 'Đang bận',
+    presence: 'offline',
+    lastSeen: 'Hoạt động 45 phút trước',
     lastMessage: 'Ok, để mình kiểm tra lại.',
     time: 'T.7',
     unread: 1,

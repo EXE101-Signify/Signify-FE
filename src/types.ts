@@ -9,6 +9,8 @@ export type Screen =
   | 'call'
   | 'languages'
   | 'profile'
+  | 'settings'
+  | 'notifications'
   | 'admin-users';
 
 export interface UserProfile {

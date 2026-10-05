@@ -22,6 +22,8 @@ import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import VerifyOtpPage from './components/auth/VerifyOtpPage';
 import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
+import SettingsPage from './components/settings/SettingsPage';
+import NotificationsPage from './components/notifications/NotificationsPage';
 import { BrandLogo, Button } from './components/common';
 import { authApi } from './services/authApi';
 import { clearStoredSession } from './services/apiClient';
@@ -107,6 +109,8 @@ export default function App() {
     call: '/call',
     languages: '/languages',
     profile: '/profile',
+    settings: '/settings',
+    notifications: '/notifications',
     'admin-users': '/admin/users',
   };
 
@@ -287,6 +291,38 @@ export default function App() {
                   onLogout={handleLogout}
                 />
               </motion.div>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <SettingsPage onNavigate={handleNavigate} />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <NotificationsPage onNavigate={handleNavigate} />
+                </motion.div>
+              </ProtectedRoute>
             }
           />
 

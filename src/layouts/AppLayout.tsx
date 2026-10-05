@@ -5,6 +5,7 @@ import {
   Languages,
   LayoutDashboard,
   LogOut,
+  Settings,
   ShieldCheck,
   User,
   Users,
@@ -15,7 +16,7 @@ import { BrandLogo, PageHeader } from '../components/common';
 
 import { getStoredUser } from '../services/apiClient';
 
-type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'admin-users'>;
+type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'settings' | 'admin-users'>;
 
 interface AppLayoutProps {
   activeScreen?: AppScreen;
@@ -60,6 +61,7 @@ export default function AppLayout({
     if (screen === 'dashboard') return location.pathname === '/dashboard';
     if (screen === 'languages') return location.pathname === '/languages';
     if (screen === 'profile') return location.pathname === '/profile';
+    if (screen === 'settings') return location.pathname === '/settings';
     if (screen === 'admin-users') return location.pathname === '/admin/users';
     return false;
   };
@@ -121,6 +123,15 @@ export default function AppLayout({
                 aria-hidden="true"
               />
               Hồ sơ cá nhân
+            </button>
+
+            <button
+              type="button"
+              className={getNavItemClass(isCurrentScreen('settings'))}
+              onClick={() => handleNav('settings', '/settings')}
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              Cài đặt
             </button>
 
             <button

@@ -1,4 +1,20 @@
-export type ChatPresence = 'online' | 'offline' | 'busy';
+export type ChatPresence = 'online' | 'offline' | 'unknown' | 'busy';
+
+export type ChatReactionType = 'LIKE' | 'LOVE' | 'HAHA' | 'WOW' | 'SAD' | 'ANGRY';
+
+export interface ChatReactionItem {
+  type: ChatReactionType;
+  count: number;
+  reactedByMe?: boolean;
+}
+
+export interface ChatAttachmentItem {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  url?: string;
+}
 
 export interface ChatMessageItem {
   id: string;
@@ -7,6 +23,9 @@ export interface ChatMessageItem {
   time: string;
   status?: 'sent' | 'seen';
   translatedText?: string;
+  edited?: boolean;
+  reactions?: ChatReactionItem[];
+  attachments?: ChatAttachmentItem[];
 }
 
 export interface ChatConversationItem {
@@ -20,6 +39,8 @@ export interface ChatConversationItem {
   time: string;
   unread: number;
   pinned?: boolean;
+  typing?: boolean;
+  hasMoreMessages?: boolean;
   messages: ChatMessageItem[];
-  sharedFiles: Array<{ id: string; name: string; meta: string }>;
+  sharedFiles: Array<ChatAttachmentItem & { meta: string }>;
 }

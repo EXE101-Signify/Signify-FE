@@ -23,6 +23,9 @@ export interface UserDTO {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  phone?: string;
+  gender?: string;
+  address?: string;
 }
 
 export interface TokenDTO {
