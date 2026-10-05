@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   User,
   Mail,
@@ -21,6 +21,8 @@ import {
 import AppLayout from '../../layouts/AppLayout';
 import type { Screen, UserProfile } from '../../types';
 import { calculatePasswordStrength, validateEmail, validateFullName, validatePassword } from '../../utils/validation';
+import { authApi } from '../../services/authApi';
+import { getStoredUser } from '../../services/apiClient';
 
 interface ProfilePageProps {
   onNavigate?: (screen: Screen) => void;
@@ -46,9 +48,47 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
 
   // User Profile State
   const [profile, setProfile] = useState<UserProfile>(() => {
+    const stored = getStoredUser();
+    if (stored) {
+      return {
+        id: String(stored.userId),
+        name: [stored.firstName, stored.lastName].filter(Boolean).join(' ') || stored.username,
+        email: stored.email || `${stored.username}@signbridge.vn`,
+        phone: '0988 123 456',
+        role: stored.role.toLowerCase() as any,
+        plan: 'pro',
+        avatar: stored.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=300',
+        bio: 'Tài khoản thành viên SignBridge.',
+        status: 'active',
+        joinedDate: 'Hôm nay',
+        lastActive: 'Vài phút trước',
+      };
+    }
     const saved = localStorage.getItem('signbridge_user_profile');
     return saved ? JSON.parse(saved) : INITIAL_USER;
   });
+
+  useEffect(() => {
+    authApi
+      .getProfile()
+      .then((res) => {
+        if (res.success && res.data) {
+          const u = res.data;
+          const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username;
+          setProfile((prev) => ({
+            ...prev,
+            id: String(u.userId),
+            name: fullName,
+            email: u.email || prev.email,
+            role: u.role.toLowerCase() as any,
+            avatar: u.avatar || prev.avatar,
+          }));
+        }
+      })
+      .catch(() => {
+        // Fallback to local profile if offline or unauthenticated
+      });
+  }, []);
 
   // Edit Form State
   const [editName, setEditName] = useState(profile.name);

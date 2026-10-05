@@ -3,6 +3,8 @@ import { MailCheck, RefreshCw } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import AuthShell from './AuthShell';
 import OtpInput from './OtpInput';
+import { emailApi } from '../../services/emailApi';
+import { authApi } from '../../services/authApi';
 
 type OtpFlow = 'register' | 'reset-password';
 
@@ -10,13 +12,16 @@ interface OtpRouteState {
   flow: OtpFlow;
   email: string;
   registration?: {
+    username: string;
     fullName: string;
+    firstName?: string;
+    lastName?: string;
     email: string;
     password: string;
+    avatarFile?: File | null;
   };
 }
 
-const MOCK_OTP = '123456';
 const RESEND_SECONDS = 60;
 
 export default function VerifyOtpPage() {
@@ -57,7 +62,7 @@ export default function VerifyOtpPage() {
 
   const isRegisterFlow = routeState.flow === 'register';
 
-  const handleVerify = (event: FormEvent<HTMLFormElement>) => {
+  const handleVerify = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
     setNotice('');
@@ -67,48 +72,82 @@ export default function VerifyOtpPage() {
       return;
     }
 
-    if (otp !== MOCK_OTP) {
-      setError('Mã OTP không chính xác. Vui lòng thử lại.');
-      return;
-    }
-
     setIsVerifying(true);
 
-    // Mock API xác thực OTP.
-    window.setTimeout(() => {
-      setIsVerifying(false);
-
+    try {
       if (isRegisterFlow) {
-        navigate('/login', {
+        // 1. Verify OTP
+        const verifyRes = await emailApi.verifyRegisterOtp(routeState.email, otp);
+        if (!verifyRes.success) {
+          setError(verifyRes.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
+          return;
+        }
+
+        // 2. Perform account registration
+        const regData = routeState.registration;
+        if (regData) {
+          const regRes = await authApi.register(
+            {
+              username: regData.username,
+              password: regData.password,
+              email: regData.email,
+              firstName: regData.firstName,
+              lastName: regData.lastName,
+            },
+            regData.avatarFile
+          );
+
+          if (regRes.success) {
+            navigate('/login', {
+              replace: true,
+              state: {
+                message: 'Xác thực & đăng ký thành công! Vui lòng đăng nhập tài khoản mới.',
+              },
+            });
+            return;
+          } else {
+            setError(regRes.message || 'Đăng ký tài khoản không thành công.');
+            return;
+          }
+        }
+      } else {
+        // For reset password flow, pass email and otp to ResetPasswordPage
+        navigate('/reset-password', {
           replace: true,
           state: {
-            message:
-              'Xác thực thành công. Tài khoản của bạn đã được tạo.',
+            email: routeState.email,
+            otp,
+            verified: true,
           },
         });
-
-        return;
       }
-
-      navigate('/reset-password', {
-        replace: true,
-        state: {
-          email: routeState.email,
-          verified: true,
-        },
-      });
-    }, 700);
+    } catch (err: any) {
+      setError(err.message || 'Lỗi xác thực mã OTP. Vui lòng kiểm tra lại.');
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
-  const handleResendOtp = () => {
+  const handleResendOtp = async () => {
     if (cooldown > 0) {
       return;
     }
 
     setOtp('');
     setError('');
-    setNotice('Mã OTP mới đã được gửi đến email của bạn.');
-    setCooldown(RESEND_SECONDS);
+    setNotice('');
+
+    try {
+      const res = await emailApi.resendOtp(routeState.email);
+      if (res.success) {
+        setNotice('Mã OTP mới đã được gửi đến email của bạn.');
+        setCooldown(RESEND_SECONDS);
+      } else {
+        setError(res.message || 'Không thể gửi lại mã OTP. Vui lòng thử lại.');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Lỗi kết nối khi gửi lại mã OTP.');
+    }
   };
 
   return (
@@ -151,10 +190,9 @@ export default function VerifyOtpPage() {
           disabled={isVerifying}
         />
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
-          <p className="text-[11px] font-semibold text-amber-700">
-            Mã OTP dùng để kiểm thử:{' '}
-            <span className="font-black">{MOCK_OTP}</span>
+        <div className="rounded-xl border border-brand-primary/20 bg-brand-primary-light/40 px-4 py-3 text-center">
+          <p className="text-[11px] font-semibold text-brand-primary">
+            Vui lòng kiểm tra hộp thư đến (hoặc Spam) của email để lấy mã OTP 6 chữ số.
           </p>
         </div>
 

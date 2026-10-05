@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
-import { Eye, EyeOff, Lock, Mail, User, UserPlus, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, type FormEvent, type ChangeEvent } from 'react';
+import { Eye, EyeOff, Lock, Mail, User, UserPlus, CheckCircle2, AlertCircle, Upload, AtSign } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AuthShell from './AuthShell';
 import GoogleButton from './GoogleButton';
 import GoogleAuthModal, { type GoogleUserInfo } from './GoogleAuthModal';
+import { emailApi } from '../../services/emailApi';
 import {
   calculatePasswordStrength,
   validateConfirmPassword,
@@ -15,16 +16,20 @@ import {
 export default function RegisterPage() {
   const navigate = useNavigate();
 
+  const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [agreeTerms, setAgreeTerms] = useState(false);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [fieldErrors, setFieldErrors] = useState<{
+    username?: string;
     fullName?: string;
     email?: string;
     password?: string;
@@ -38,9 +43,21 @@ export default function RegisterPage() {
 
   const passwordStrength = calculatePasswordStrength(password);
 
+  const handleAvatarChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setAvatarFile(file);
+      setAvatarPreview(URL.createObjectURL(file));
+    }
+  };
+
   const handleBlurField = (field: string) => {
     setFieldErrors((prev) => {
       const updated = { ...prev };
+      if (field === 'username' && username.trim()) {
+        if (username.length < 3) updated.username = 'Tên đăng nhập phải có ít nhất 3 ký tự';
+        else delete updated.username;
+      }
       if (field === 'fullName') {
         const err = validateFullName(fullName);
         if (err) updated.fullName = err;
@@ -65,16 +82,17 @@ export default function RegisterPage() {
     });
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setGlobalError('');
 
-    // Perform validation across all fields
     const nameErr = validateFullName(fullName);
     const emailErr = validateEmail(email);
     const passErr = validatePassword(password);
     const confirmErr = validateConfirmPassword(password, confirmPassword);
     const termsErr = !agreeTerms ? 'Bạn cần đồng ý với Điều khoản dịch vụ để tiếp tục.' : null;
+
+    const finalUsername = username.trim() || email.split('@')[0] || `user_${Date.now()}`;
 
     if (nameErr || emailErr || passErr || confirmErr || termsErr) {
       setFieldErrors({
@@ -91,22 +109,38 @@ export default function RegisterPage() {
     setFieldErrors({});
     setIsSubmitting(true);
 
-    // Mock API gửi OTP đăng ký.
-    window.setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      // Send OTP for registration email verification
+      const res = await emailApi.sendRegisterOtp(email);
 
-      navigate('/verify-otp', {
-        state: {
-          flow: 'register',
-          email,
-          registration: {
-            fullName: fullName.trim(),
+      const nameParts = fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      if (res.success) {
+        navigate('/verify-otp', {
+          state: {
+            flow: 'register',
             email,
-            password,
+            registration: {
+              username: finalUsername,
+              fullName: fullName.trim(),
+              firstName,
+              lastName,
+              email: email.trim(),
+              password,
+              avatarFile,
+            },
           },
-        },
-      });
-    }, 700);
+        });
+      } else {
+        setGlobalError(res.message || 'Không thể gửi mã OTP. Vui lòng thử lại.');
+      }
+    } catch (err: any) {
+      setGlobalError(err.message || 'Lỗi gửi mã OTP. Vui lòng kiểm tra lại email.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleGoogleSuccess = (userInfo: GoogleUserInfo) => {
@@ -171,6 +205,45 @@ export default function RegisterPage() {
       )}
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+        {/* Username */}
+        <div>
+          <label
+            htmlFor="register-username"
+            className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted mb-1"
+          >
+            Tên đăng nhập (Username)
+          </label>
+
+          <div className="relative">
+            <AtSign className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
+
+            <input
+              id="register-username"
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                if (fieldErrors.username) {
+                  setFieldErrors((prev) => ({ ...prev, username: undefined }));
+                }
+              }}
+              onBlur={() => handleBlurField('username')}
+              placeholder="ví dụ: alice123 (tùy chọn)"
+              className={`block w-full rounded-xl border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 ${
+                fieldErrors.username
+                  ? 'border-brand-error focus:ring-brand-error/20'
+                  : 'border-brand-border focus:ring-brand-primary'
+              }`}
+            />
+          </div>
+          {fieldErrors.username && (
+            <p className="mt-1 text-[11px] font-semibold text-brand-error">
+              {fieldErrors.username}
+            </p>
+          )}
+        </div>
+
         {/* Full Name */}
         <div>
           <label

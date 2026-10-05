@@ -18,6 +18,7 @@ import type { Screen } from '../types';
 import GoogleButton from './auth/GoogleButton';
 import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
 import { validateEmail, validatePassword } from '../utils/validation';
+import { authApi } from '../services/authApi';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
@@ -66,11 +67,10 @@ export default function AuthPage({
     });
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setGlobalError('');
 
-    // If sandbox bullet points are present or normal validation
     const emailErr = validateEmail(email);
     const passErr = password === '••••••••' ? null : validatePassword(password);
 
@@ -86,11 +86,24 @@ export default function AuthPage({
     setFieldErrors({});
     setIsSubmitting(true);
 
-    // Mock API đăng nhập.
-    window.setTimeout(() => {
+    try {
+      const res = await authApi.login({
+        username: email,
+        password: password,
+      });
+
+      if (res.success) {
+        onLoginSuccess();
+      } else {
+        setGlobalError(res.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+      }
+    } catch (err: any) {
+      setGlobalError(
+        err.message || 'Đăng nhập không thành công. Mật khẩu hoặc tên đăng nhập không đúng.'
+      );
+    } finally {
       setIsSubmitting(false);
-      onLoginSuccess();
-    }, 800);
+    }
   };
 
   const handleGoogleSuccess = (user: GoogleUserInfo) => {

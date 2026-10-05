@@ -21,6 +21,8 @@ import VerifyOtpPage from './components/auth/VerifyOtpPage';
 import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
 import { BrandLogo, Button } from './components/common';
+import { authApi } from './services/authApi';
+import { clearStoredSession } from './services/apiClient';
 
 import type { Contact, Screen } from './types';
 
@@ -102,7 +104,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('signbridge_auth');
+    authApi.logout().catch(() => clearStoredSession());
     setIsAuthenticated(false);
     setActiveCallContact(null);
     navigate('/');

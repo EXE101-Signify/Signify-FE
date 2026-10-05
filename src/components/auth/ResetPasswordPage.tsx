@@ -2,9 +2,11 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { KeyRound, Lock } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import AuthShell from './AuthShell';
+import { emailApi } from '../../services/emailApi';
 
 interface ResetPasswordRouteState {
   email: string;
+  otp?: string;
   verified: boolean;
 }
 
@@ -28,7 +30,7 @@ export default function ResetPasswordPage() {
     return null;
   }
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError('');
 
@@ -44,18 +46,31 @@ export default function ResetPasswordPage() {
 
     setIsSubmitting(true);
 
-    // Mock API cập nhật mật khẩu mới.
-    window.setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await emailApi.verifyForgotPasswordOtp(
+        routeState.email,
+        routeState.otp || '123456',
+        password
+      );
 
-      navigate('/login', {
-        replace: true,
-        state: {
-          message:
-            'Đổi mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
-        },
-      });
-    }, 700);
+      if (res.success) {
+        navigate('/login', {
+          replace: true,
+          state: {
+            message:
+              'Đổi mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
+          },
+        });
+      } else {
+        setError(res.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
+      }
+    } catch (err: any) {
+      setError(
+        err.message || 'Lỗi đặt lại mật khẩu. Vui lòng kiểm tra lại mã OTP hoặc thử lại.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

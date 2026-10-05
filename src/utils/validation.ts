@@ -51,11 +51,17 @@ export function validatePassword(password: string): string | null {
   if (password.length < 8) {
     return 'Mật khẩu phải có tối thiểu 8 ký tự.';
   }
-  if (!/[A-Za-z]/.test(password)) {
-    return 'Mật khẩu phải chứa ít nhất một chữ cái.';
+  if (!/[a-z]/.test(password)) {
+    return 'Mật khẩu phải chứa ít nhất một chữ cái viết thường (a-z).';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Mật khẩu phải chứa ít nhất một chữ cái viết hoa (A-Z).';
   }
   if (!/[0-9]/.test(password)) {
-    return 'Mật khẩu phải chứa ít nhất một chữ số.';
+    return 'Mật khẩu phải chứa ít nhất một chữ số (0-9).';
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password) && !/[^a-zA-Z0-9]/.test(password)) {
+    return 'Mật khẩu phải chứa ít nhất một ký tự đặc biệt (VD: !@#$%...).';
   }
   return null;
 }
