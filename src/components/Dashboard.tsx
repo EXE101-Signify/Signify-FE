@@ -16,6 +16,7 @@ import {
 
 import type { CallLog, Contact, Screen } from '../types';
 import AppLayout from '../layouts/AppLayout';
+import { getStoredUser } from '../services/apiClient';
 
 interface DashboardProps {
   onNavigate: (screen: Screen) => void;
@@ -184,13 +185,18 @@ export default function Dashboard({
     onStartCall(selectedContact);
   };
 
+  const currentUser = getStoredUser();
+  const displayName = currentUser
+    ? ([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username)
+    : 'Bạn';
+
   return (
     <AppLayout
       activeScreen="dashboard"
       title={
         <>
           Chào{' '}
-          <span className="text-brand-primary">Thanh Liêm</span>,
+          <span className="text-brand-primary">{displayName}</span>,
           chúc ngày tốt lành!
         </>
       }

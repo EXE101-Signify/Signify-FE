@@ -13,6 +13,8 @@ import {
 import type { Screen } from '../types';
 import { BrandLogo, PageHeader } from '../components/common';
 
+import { getStoredUser } from '../services/apiClient';
+
 type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'admin-users'>;
 
 interface AppLayoutProps {
@@ -45,6 +47,13 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
+
+  const currentUser = getStoredUser();
+  const displayName = currentUser
+    ? ([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username)
+    : 'Thanh Liêm';
+  const userRoleLabel = currentUser?.role === 'ADMIN' ? 'Pro Admin' : 'Thành viên Pro';
+  const avatarSrc = currentUser?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150';
 
   const isCurrentScreen = (screen: AppScreen) => {
     if (activeScreen) return activeScreen === screen;
@@ -158,19 +167,19 @@ export default function AppLayout({
             className="flex items-center gap-3 w-full text-left cursor-pointer group"
           >
             <img
-              src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150"
-              alt="Ảnh đại diện Thanh Liêm"
+              src={avatarSrc}
+              alt={`Ảnh đại diện ${displayName}`}
               className="h-9 w-9 rounded-full border border-brand-border-high object-cover group-hover:scale-105 transition-transform"
               referrerPolicy="no-referrer"
             />
 
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-bold text-brand-text group-hover:text-brand-primary transition-colors">
-                Thanh Liêm
+                {displayName}
               </div>
 
               <span className="mt-0.5 inline-flex rounded bg-brand-secondary px-2 py-0.5 text-[8px] font-extrabold uppercase tracking-widest text-white">
-                Pro Admin
+                {userRoleLabel}
               </span>
             </div>
           </button>
