@@ -84,10 +84,7 @@ export default function VerifyOtpPage() {
 
     setIsVerifying(true);
 
-    // Mock API xác thực OTP.
-    window.setTimeout(() => {
-      setIsVerifying(false);
-
+    try {
       if (isRegisterFlow) {
         // 1. Verify OTP
         const verifyRes = await emailApi.verifyRegisterOtp(routeState.email, otp);
@@ -216,7 +213,7 @@ export default function VerifyOtpPage() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center">
           <p className="text-[11px] font-semibold text-amber-700">
             Mã OTP dùng để kiểm thử:{' '}
-            <span className="font-black">{MOCK_OTP}</span>
+            <span className="font-black">{}</span>
           </p>
         </div>
 

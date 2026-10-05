@@ -155,50 +155,6 @@ export default function AuthPage({
         </div>
       )}
 
-      {/* Quick Sandbox Login Box */}
-      <section className="mb-6 border-b border-brand-border pb-6">
-        <div className="flex items-start gap-3">
-          <UserCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-primary" />
-
-          <div>
-            <h2 className="text-sm font-semibold text-brand-text">
-              Tài khoản dùng thử
-            </h2>
-
-            <p className="mt-1 text-sm leading-5 text-brand-text-muted">
-              Truy cập nhanh bằng tài khoản Pro của Thanh Liêm.
-            </p>
-          </div>
-        </div>
-
-        <Button
-          id="quick-login-sandbox-btn"
-          type="button"
-          variant="outline"
-          fullWidth
-          className="mt-4"
-          onClick={handleQuickLogin}
-        >
-          Tiếp tục với tài khoản Thanh Liêm
-        </Button>
-      </section>
-
-      {/* Google Sign In Option */}
-      <div className="mb-6">
-        <GoogleButton
-          label="Tiếp tục bằng Google"
-          onClick={() => setIsGoogleModalOpen(true)}
-        />
-      </div>
-
-      <div className="my-6 flex items-center gap-3">
-        <span className="h-px flex-1 bg-brand-border" />
-        <span className="text-xs text-brand-text-muted">
-          hoặc đăng nhập bằng tài khoản
-        </span>
-        <span className="h-px flex-1 bg-brand-border" />
-      </div>
-
       <form className="space-y-5" onSubmit={handleSubmit}>
         <Input
           id="auth-username-input"
