@@ -111,13 +111,16 @@ export default function App() {
   };
 
   const handleNavigate = (screen: Screen) => {
-    navigate(screenToPath[screen] || '/login');
+    const nextPath = screenToPath[screen] || '/login';
+    if (location.pathname !== nextPath) {
+      navigate(nextPath);
+    }
   };
 
   const handleLoginSuccess = () => {
     localStorage.setItem('signbridge_auth', 'true');
     setIsAuthenticated(true);
-    navigate('/dashboard', { replace: true });
+    navigate('/dashboard');
   };
 
   const handleLogout = () => {
@@ -161,21 +164,17 @@ export default function App() {
           <Route
             path="/login"
             element={
-              isAuthenticated ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <AuthPage
-                    onNavigate={handleNavigate}
-                    onLoginSuccess={handleLoginSuccess}
-                  />
-                </motion.div>
-              )
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AuthPage
+                  onNavigate={handleNavigate}
+                  onLoginSuccess={handleLoginSuccess}
+                />
+              </motion.div>
             }
           />
 

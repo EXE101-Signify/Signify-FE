@@ -67,6 +67,7 @@ export default function AppLayout({
   const handleNav = (screen: Screen, path: string) => {
     if (onNavigate) {
       onNavigate(screen);
+      return;
     }
     navigate(path);
   };
