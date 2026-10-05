@@ -20,6 +20,7 @@ import GoogleButton from './auth/GoogleButton';
 import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
 import { validateEmail, validatePassword } from '../utils/validation';
 import { authApi } from '../services/authApi';
+import { setStoredSession, type UserDTO, type TokenDTO } from '../services/apiClient';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
@@ -106,7 +107,25 @@ export default function AuthPage({
     }
   };
 
-  const handleGoogleSuccess = (user: GoogleUserInfo) => {
+  const handleGoogleSuccess = (userInfo: GoogleUserInfo) => {
+    const userDTO: UserDTO = {
+      userId: Date.now(),
+      username: userInfo.email.split('@')[0],
+      role: 'USER',
+      emailVerified: true,
+      email: userInfo.email,
+      firstName: userInfo.name.split(' ')[0],
+      lastName: userInfo.name.split(' ').slice(1).join(' '),
+      avatar: userInfo.avatar,
+    };
+    const tokenDTO: TokenDTO = {
+      accessToken: `mock_gg_access_token_${Date.now()}`,
+      refreshToken: `mock_gg_refresh_token_${Date.now()}`,
+      tokenType: 'Bearer',
+      accessExpiresAt: Date.now() + 900000,
+      refreshExpiresAt: Date.now() + 604800000,
+    };
+    setStoredSession(tokenDTO, userDTO);
     onLoginSuccess();
   };
 
