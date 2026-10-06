@@ -1,12 +1,27 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
 import type { CallableContact, Screen } from '../types';
 import { getStoredUser } from '../services/apiClient';
-import { conversationApi, type ConversationSummary } from '../services/conversationApi';
+import {
+  conversationApi,
+  type ChatMessageResponse,
+  type ChatRealtimeEvent,
+  type ConversationSummary,
+  type MessageAttachment,
+  type ReactionSummaryResponse,
+} from '../services/conversationApi';
+import { publishToStomp, subscribeToStomp } from '../services/stompConnection';
+import { userBlockApi } from '../services/userBlockApi';
 import ConversationList from './chat/ConversationList';
 import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
-import type { ChatConversationItem, ChatReactionType } from './chat/types';
+import type {
+  ChatAttachmentItem,
+  ChatConversationItem,
+  ChatMessageItem,
+  ChatReactionItem,
+  ChatReactionType,
+} from './chat/types';
 
 interface DashboardConversation extends ChatConversationItem {
   conversationId: number;
@@ -22,6 +37,32 @@ interface DashboardProps {
   callError: string | null;
 }
 
+function epoch(value: number | null | undefined): number | null {
+  if (!value || !Number.isFinite(value)) return null;
+  return value < 1_000_000_000_000 ? value * 1000 : value;
+}
+
+function formatTime(value: number | null | undefined): string {
+  const timestamp = epoch(value);
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatLastSeen(value: number | null | undefined): string {
+  const timestamp = epoch(value);
+  if (!timestamp) return 'Không hoạt động gần đây';
+  return `Hoạt động lúc ${new Date(timestamp).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  })}`;
+}
+
+function messagePreview(content: string | null | undefined, messageType?: string | null): string {
+  return content?.trim() || (messageType === 'FILE' ? 'Đã gửi một tệp' : 'Chưa có tin nhắn');
+}
+
 function mapConversation(conversation: ConversationSummary, currentUserId: number | undefined): DashboardConversation | null {
   if (!Number.isSafeInteger(conversation.conversationId) || conversation.conversationId <= 0) return null;
   const peer = typeof currentUserId === 'number' && Number.isSafeInteger(currentUserId) && currentUserId > 0
@@ -30,9 +71,6 @@ function mapConversation(conversation: ConversationSummary, currentUserId: numbe
   const name = conversation.type === 'PRIVATE'
     ? peer?.fullName || conversation.name || `Cuộc trò chuyện #${conversation.conversationId}`
     : conversation.name || `Nhóm #${conversation.conversationId}`;
-  const updatedAt = Number.isSafeInteger(conversation.updatedAt) && conversation.updatedAt > 0
-    ? conversation.updatedAt : null;
-  const date = updatedAt === null ? null : new Date(updatedAt < 1_000_000_000_000 ? updatedAt * 1000 : updatedAt);
 
   return {
     id: `conversation-${conversation.conversationId}`,
@@ -43,17 +81,97 @@ function mapConversation(conversation: ConversationSummary, currentUserId: numbe
     role: conversation.type === 'PRIVATE' ? 'Cuộc trò chuyện riêng' : 'Cuộc trò chuyện nhóm',
     avatar: peer?.avatar ?? '',
     presence: 'unknown',
-    lastSeen: 'Chưa có dữ liệu trạng thái',
-    lastMessage: 'Chưa có tin nhắn được tải',
-    time: date && !Number.isNaN(date.getTime())
-      ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '',
+    lastSeen: 'Đang tải trạng thái…',
+    lastMessage: messagePreview(conversation.lastMessage?.content, conversation.lastMessage?.messageType),
+    time: formatTime(conversation.lastMessage?.createdAt ?? conversation.updatedAt),
     unread: 0,
     messages: [],
     sharedFiles: [],
+    messagesLoaded: false,
+    loadingMessages: false,
+    hasMoreMessages: false,
+    nextMessageCursor: null,
   };
 }
 
+function mapAttachment(attachment: MessageAttachment, url?: string): ChatAttachmentItem {
+  return {
+    id: String(attachment.attachmentId),
+    name: attachment.fileName,
+    mimeType: attachment.mimeType,
+    size: attachment.fileSize,
+    createdAt: epoch(attachment.createdAt) ?? undefined,
+    url,
+  };
+}
+
+function mapMessage(message: ChatMessageResponse, currentUserId: number | undefined): ChatMessageItem {
+  return {
+    id: String(message.messageId),
+    sender: message.senderId === currentUserId ? 'me' : 'other',
+    content: message.content ?? '',
+    time: formatTime(message.createdAt),
+    createdAt: epoch(message.createdAt) ?? undefined,
+    status: message.senderId === currentUserId ? 'sent' : undefined,
+    edited: Boolean(message.editedAt),
+    attachments: message.attachments?.map((attachment) => mapAttachment(attachment)) ?? [],
+  };
+}
+
+function mapReactions(summary: ReactionSummaryResponse, currentUserId: number | undefined): ChatReactionItem[] {
+  return Object.entries(summary.counts)
+    .filter((entry): entry is [ChatReactionType, number] => Number(entry[1]) > 0)
+    .map(([type, count]) => ({
+      type,
+      count: Number(count),
+      reactedByMe: summary.reactions.some((reaction) => reaction.userId === currentUserId && reaction.reaction === type),
+    }));
+}
+
+function sharedFiles(messages: ChatMessageItem[]): DashboardConversation['sharedFiles'] {
+  return messages
+    .flatMap((message) => message.attachments ?? [])
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .map((file) => ({
+      ...file,
+      meta: `${formatFileSize(file.size)}${file.createdAt ? ` · ${new Date(file.createdAt).toLocaleDateString('vi-VN')}` : ''}`,
+    }));
+}
+
+function sortMessages(messages: ChatMessageItem[]): ChatMessageItem[] {
+  return [...messages].sort((a, b) => (a.createdAt ?? Number(a.id)) - (b.createdAt ?? Number(b.id)));
+}
+
+async function enrichMessages(
+  conversationId: number,
+  messages: ChatMessageResponse[],
+  currentUserId: number | undefined,
+): Promise<ChatMessageItem[]> {
+  return Promise.all(messages.map(async (message) => {
+    const item = mapMessage(message, currentUserId);
+    const [reactionSummary, attachments] = await Promise.all([
+      conversationApi.reactions(conversationId, message.messageId).catch(() => null),
+      Promise.all((message.attachments ?? []).map(async (attachment) => {
+        const detail = await conversationApi.attachment(attachment.attachmentId).catch(() => null);
+        return mapAttachment(attachment, detail?.url);
+      })),
+    ]);
+    return {
+      ...item,
+      reactions: reactionSummary ? mapReactions(reactionSummary, currentUserId) : [],
+      attachments,
+    };
+  }));
+}
+
+function validId(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error('ID dữ liệu chat không hợp lệ.');
+  return parsed;
+}
+
 export default function Dashboard({ onNavigate, onStartCall, callCreating, callError }: DashboardProps) {
+  const currentUserId = getStoredUser()?.userId;
   const [conversations, setConversations] = useState<DashboardConversation[]>([]);
   const [activeId, setActiveId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -62,19 +180,70 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<number>>(new Set());
+  const activeIdRef = useRef(activeId);
+  const seenEventIds = useRef(new Set<string>());
+
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  const showNotice = useCallback((message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice(null), 3200);
+  }, []);
+
+  const updateConversation = useCallback((conversationId: number, update: (item: DashboardConversation) => DashboardConversation) => {
+    setConversations((current) => current.map((item) => item.conversationId === conversationId ? update(item) : item));
+  }, []);
+
+  const upsertMessage = useCallback((conversationId: number, message: ChatMessageItem) => {
+    updateConversation(conversationId, (conversation) => {
+      const exists = conversation.messages.some((item) => item.id === message.id);
+      const messages = sortMessages(exists
+        ? conversation.messages.map((item) => item.id === message.id ? { ...item, ...message } : item)
+        : [...conversation.messages, message]);
+      return {
+        ...conversation,
+        messages,
+        sharedFiles: sharedFiles(messages),
+        lastMessage: messagePreview(message.content, message.attachments?.length ? 'FILE' : 'TEXT'),
+        time: message.time,
+      };
+    });
+  }, [updateConversation]);
 
   useEffect(() => {
     let active = true;
-    conversationApi.list()
-      .then((items) => {
+    Promise.all([conversationApi.list(), userBlockApi.list().catch(() => [])])
+      .then(async ([items, blocked]) => {
         if (!active) return;
-        const currentUserId = getStoredUser()?.userId;
         const mapped = items
           .map((item) => mapConversation(item, currentUserId))
           .filter((item): item is DashboardConversation => item !== null);
         setConversations(mapped);
         setActiveId(mapped[0]?.id ?? '');
+        setBlockedUserIds(new Set(blocked.map((item) => item.userId)));
         setConversationsError(null);
+
+        const metadata = await Promise.all(mapped.map(async (item) => {
+          if (item.type !== 'PRIVATE') return { id: item.conversationId };
+          const [unread, presence] = await Promise.all([
+            conversationApi.unreadCount(item.conversationId).catch(() => null),
+            conversationApi.presence(item.conversationId).catch(() => null),
+          ]);
+          return { id: item.conversationId, unread, presence };
+        }));
+        if (!active) return;
+        setConversations((current) => current.map((item) => {
+          const data = metadata.find((entry) => entry.id === item.conversationId);
+          if (!data || !('presence' in data)) return item;
+          const presence = data.presence;
+          return {
+            ...item,
+            unread: Number(data.unread?.unreadCount ?? item.unread),
+            presence: presence?.status === 'ONLINE' ? 'online' : presence?.status === 'OFFLINE' ? 'offline' : 'unknown',
+            lastSeen: presence?.status === 'ONLINE' ? 'Đang hoạt động' : formatLastSeen(presence?.lastSeenAt),
+          };
+        }));
       })
       .catch((error: unknown) => {
         if (active) setConversationsError(error instanceof Error ? error.message : 'Không thể tải cuộc trò chuyện.');
@@ -83,13 +252,161 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
         if (active) setLoadingConversations(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [currentUserId]);
 
   const activeConversation = conversations.find((item) => item.id === activeId);
+
+  useEffect(() => {
+    if (!activeConversation || activeConversation.type !== 'PRIVATE'
+      || activeConversation.messagesLoaded || activeConversation.loadingMessages) return;
+    let active = true;
+    const conversationId = activeConversation.conversationId;
+    updateConversation(conversationId, (item) => ({ ...item, loadingMessages: true }));
+    conversationApi.messages(conversationId)
+      .then(async (page) => ({ page, messages: await enrichMessages(conversationId, page.messages, currentUserId) }))
+      .then(({ page, messages }) => {
+        if (!active) return;
+        updateConversation(conversationId, (item) => {
+          const loadedIds = new Set(messages.map((message) => message.id));
+          const merged = sortMessages([
+            ...messages,
+            ...item.messages.filter((message) => !loadedIds.has(message.id)),
+          ]);
+          return {
+            ...item,
+            messages: merged,
+            sharedFiles: sharedFiles(merged),
+            messagesLoaded: true,
+            loadingMessages: false,
+            hasMoreMessages: page.hasMore,
+            nextMessageCursor: page.nextCursor,
+            unread: 0,
+          };
+        });
+        const ordered = sortMessages(messages);
+        const latest = ordered.at(-1);
+        if (latest) void conversationApi.markRead(conversationId, validId(latest.id)).catch(() => {});
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        updateConversation(conversationId, (item) => ({ ...item, messagesLoaded: true, loadingMessages: false }));
+        showNotice(error instanceof Error ? error.message : 'Không thể tải lịch sử tin nhắn.');
+      });
+    return () => { active = false; };
+  }, [activeConversation?.conversationId, currentUserId, showNotice, updateConversation]);
+
+  const realtimeConversationKey = useMemo(() => conversations
+    .filter((item) => item.type === 'PRIVATE')
+    .map((item) => item.conversationId)
+    .sort((a, b) => a - b)
+    .join(','), [conversations]);
+
+  useEffect(() => {
+    if (!realtimeConversationKey) return;
+    const ids = realtimeConversationKey.split(',').map(Number).filter(Number.isSafeInteger);
+    const stops = ids.map((conversationId) => subscribeToStomp(
+      `/user/queue/conversations/${conversationId}`,
+      (body) => {
+        let event: ChatRealtimeEvent;
+        try { event = JSON.parse(body) as ChatRealtimeEvent; } catch { return; }
+        if (!event.eventId || seenEventIds.current.has(event.eventId)) return;
+        seenEventIds.current.add(event.eventId);
+        if (seenEventIds.current.size > 500) {
+          seenEventIds.current = new Set([...seenEventIds.current].slice(-250));
+        }
+
+        if (event.type === 'MESSAGE_CREATED' && event.messageId && event.senderId && event.createdAt) {
+          const apply = async () => {
+            let attachments: ChatAttachmentItem[] = [];
+            if (event.attachmentId) {
+              const detail = await conversationApi.attachment(event.attachmentId).catch(() => null);
+              if (detail) attachments = [mapAttachment(detail, detail.url)];
+            }
+            const message = mapMessage({
+              messageId: event.messageId!,
+              conversationId,
+              senderId: event.senderId!,
+              content: event.content ?? '',
+              messageType: event.messageType === 'FILE' ? 'FILE' : 'TEXT',
+              createdAt: event.createdAt!,
+              attachments: attachments.map((file) => ({
+                attachmentId: validId(file.id), fileName: file.name, mimeType: file.mimeType,
+                fileSize: file.size, createdAt: file.createdAt ?? event.createdAt!,
+              })),
+            }, currentUserId);
+            message.attachments = attachments;
+            upsertMessage(conversationId, message);
+            const isActive = activeIdRef.current === `conversation-${conversationId}`;
+            if (event.senderId !== currentUserId && isActive) {
+              void conversationApi.markRead(conversationId, event.messageId!).catch(() => {});
+            } else if (event.senderId !== currentUserId) {
+              updateConversation(conversationId, (item) => ({ ...item, unread: item.unread + 1 }));
+            }
+          };
+          void apply();
+          return;
+        }
+
+        if (event.type === 'MESSAGE_UPDATED' && event.messageId) {
+          updateConversation(conversationId, (item) => {
+            const messages = item.messages.map((message) => message.id === String(event.messageId)
+              ? { ...message, content: event.content ?? '', edited: true, time: formatTime(event.createdAt) || message.time }
+              : message);
+            return { ...item, messages, lastMessage: item.messages.at(-1)?.id === String(event.messageId) ? event.content ?? '' : item.lastMessage };
+          });
+          return;
+        }
+
+        if (event.type === 'MESSAGE_DELETED' && event.messageId) {
+          updateConversation(conversationId, (item) => {
+            const messages = item.messages.filter((message) => message.id !== String(event.messageId));
+            const latest = messages.at(-1);
+            return {
+              ...item,
+              messages,
+              sharedFiles: sharedFiles(messages),
+              lastMessage: latest ? messagePreview(latest.content, latest.attachments?.length ? 'FILE' : 'TEXT') : 'Chưa có tin nhắn',
+              time: latest?.time ?? '',
+            };
+          });
+          return;
+        }
+
+        if (event.type === 'TYPING_START' || event.type === 'TYPING_STOP') {
+          if (event.senderId !== currentUserId) {
+            updateConversation(conversationId, (item) => ({ ...item, typing: event.type === 'TYPING_START' }));
+          }
+          return;
+        }
+
+        if (event.type === 'READ_RECEIPT' && event.userId !== currentUserId && event.lastReadMessageId) {
+          updateConversation(conversationId, (item) => ({
+            ...item,
+            messages: item.messages.map((message) => message.sender === 'me' && validId(message.id) <= event.lastReadMessageId!
+              ? { ...message, status: 'seen' }
+              : message),
+          }));
+          return;
+        }
+
+        if (event.type === 'PRESENCE_ONLINE' || event.type === 'PRESENCE_OFFLINE') {
+          updateConversation(conversationId, (item) => ({
+            ...item,
+            presence: event.type === 'PRESENCE_ONLINE' ? 'online' : 'offline',
+            lastSeen: event.type === 'PRESENCE_ONLINE' ? 'Đang hoạt động' : formatLastSeen(event.timestamp),
+          }));
+        }
+      },
+    ));
+    return () => stops.forEach((stop) => stop());
+  }, [currentUserId, realtimeConversationKey, updateConversation, upsertMessage]);
+
   const visibleConversations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return conversations.filter((conversation) => {
-      const matchesQuery = !query || conversation.name.toLowerCase().includes(query) || conversation.role.toLowerCase().includes(query) || conversation.lastMessage.toLowerCase().includes(query);
+      const matchesQuery = !query || conversation.name.toLowerCase().includes(query)
+        || conversation.role.toLowerCase().includes(query)
+        || conversation.lastMessage.toLowerCase().includes(query);
       return matchesQuery && (!unreadOnly || conversation.unread > 0);
     });
   }, [conversations, searchQuery, unreadOnly]);
@@ -97,119 +414,152 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
   const selectConversation = (id: string) => {
     setActiveId(id);
     setInfoOpen(true);
-    setConversations((current) => current.map((conversation) => conversation.id === id ? { ...conversation, unread: 0 } : conversation));
+    const selected = conversations.find((item) => item.id === id);
+    if (selected) {
+      updateConversation(selected.conversationId, (item) => ({ ...item, unread: 0 }));
+      const latest = selected.messages.at(-1);
+      if (latest) void conversationApi.markRead(selected.conversationId, validId(latest.id)).catch(() => {});
+    }
   };
 
-  const sendMessage = (content: string) => {
-    const time = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date());
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      lastMessage: content,
-      time,
-      messages: [...conversation.messages, { id: `local-${Date.now()}`, sender: 'me', content, time, status: 'sent' }],
-    } : conversation));
+  const requireActivePrivateConversation = (): DashboardConversation => {
+    const current = conversations.find((item) => item.id === activeId);
+    if (!current || current.type !== 'PRIVATE') throw new Error('API tin nhắn hiện chỉ hỗ trợ hội thoại riêng.');
+    return current;
   };
 
-  const editMessage = (messageId: string, content: string) => {
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      lastMessage: conversation.messages.at(-1)?.id === messageId ? content : conversation.lastMessage,
-      messages: conversation.messages.map((message) => message.id === messageId
-        ? { ...message, content, edited: true }
-        : message),
-    } : conversation));
+  const sendMessage = async (content: string) => {
+    const current = requireActivePrivateConversation();
+    const response = await conversationApi.sendMessage(current.conversationId, content);
+    upsertMessage(current.conversationId, mapMessage(response, currentUserId));
   };
 
-  const deleteMessage = (messageId: string) => {
-    setConversations((current) => current.map((conversation) => {
-      if (conversation.id !== activeId) return conversation;
-      const remainingMessages = conversation.messages.filter((message) => message.id !== messageId);
-      const deletedAttachmentIds = new Set(
-        conversation.messages.find((message) => message.id === messageId)?.attachments?.map((file) => file.id) ?? [],
-      );
-      const latestMessage = remainingMessages.at(-1);
+  const editMessage = async (messageId: string, content: string) => {
+    const current = requireActivePrivateConversation();
+    const response = await conversationApi.editMessage(current.conversationId, validId(messageId), content);
+    upsertMessage(current.conversationId, { ...mapMessage(response, currentUserId), edited: true });
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    const current = requireActivePrivateConversation();
+    await conversationApi.deleteMessage(current.conversationId, validId(messageId));
+    updateConversation(current.conversationId, (item) => {
+      const messages = item.messages.filter((message) => message.id !== messageId);
+      const latest = messages.at(-1);
       return {
-        ...conversation,
-        messages: remainingMessages,
-        sharedFiles: conversation.sharedFiles.filter((file) => !deletedAttachmentIds.has(file.id)),
-        lastMessage: latestMessage?.content || (latestMessage?.attachments?.length ? 'Đã gửi một tệp' : 'Chưa có tin nhắn'),
-        time: latestMessage?.time ?? '',
+        ...item,
+        messages,
+        sharedFiles: sharedFiles(messages),
+        lastMessage: latest ? messagePreview(latest.content, latest.attachments?.length ? 'FILE' : 'TEXT') : 'Chưa có tin nhắn',
+        time: latest?.time ?? '',
       };
+    });
+    showNotice('Đã xóa tin nhắn.');
+  };
+
+  const toggleReaction = async (messageId: string, type: ChatReactionType) => {
+    const current = requireActivePrivateConversation();
+    const message = current.messages.find((item) => item.id === messageId);
+    const reacted = message?.reactions?.some((reaction) => reaction.type === type && reaction.reactedByMe);
+    const summary = reacted
+      ? await conversationApi.removeReaction(current.conversationId, validId(messageId), type)
+      : await conversationApi.setReaction(current.conversationId, validId(messageId), type);
+    updateConversation(current.conversationId, (item) => ({
+      ...item,
+      messages: item.messages.map((entry) => entry.id === messageId
+        ? { ...entry, reactions: mapReactions(summary, currentUserId) }
+        : entry),
     }));
-    showPreviewNotice('Đã xóa tin nhắn khỏi bản xem trước.');
   };
 
-  const toggleReaction = (messageId: string, type: ChatReactionType) => {
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      messages: conversation.messages.map((message) => {
-        if (message.id !== messageId) return message;
-        const reactions = message.reactions ?? [];
-        const mine = reactions.find((reaction) => reaction.reactedByMe);
-        let next = reactions.map((reaction) => reaction.reactedByMe
-          ? { ...reaction, count: reaction.count - 1, reactedByMe: false }
-          : reaction).filter((reaction) => reaction.count > 0);
-        if (mine?.type !== type) {
-          const existing = next.find((reaction) => reaction.type === type);
-          next = existing
-            ? next.map((reaction) => reaction.type === type
-              ? { ...reaction, count: reaction.count + 1, reactedByMe: true }
-              : reaction)
-            : [...next, { type, count: 1, reactedByMe: true }];
-        }
-        return { ...message, reactions: next };
-      }),
-    } : conversation));
-  };
-
-  const sendAttachment = (file: File, caption: string) => {
-    const time = new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(new Date());
-    const attachmentId = `local-file-${Date.now()}`;
-    const attachment = {
-      id: attachmentId,
-      name: file.name,
-      mimeType: file.type,
-      size: file.size,
-      url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+  const sendAttachment = async (file: File, caption: string) => {
+    const current = requireActivePrivateConversation();
+    const response = await conversationApi.sendAttachment(current.conversationId, file, caption);
+    const detail = await conversationApi.attachment(response.attachmentId).catch(() => null);
+    const attachment: ChatAttachmentItem = {
+      id: String(response.attachmentId),
+      name: response.fileName,
+      mimeType: response.mimeType,
+      size: response.fileSize,
+      createdAt: epoch(response.createdAt) ?? undefined,
+      url: detail?.url,
     };
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      lastMessage: caption || `Đã gửi ${file.name}`,
-      time,
-      messages: [...conversation.messages, {
-        id: `local-message-${Date.now()}`,
-        sender: 'me' as const,
-        content: caption,
-        time,
-        status: 'sent' as const,
-        attachments: [attachment],
-      }],
-      sharedFiles: [{ ...attachment, meta: `${formatFileSize(file.size)} · Vừa xong` }, ...conversation.sharedFiles],
-    } : conversation));
+    const message = mapMessage({
+      messageId: response.messageId,
+      conversationId: response.conversationId,
+      senderId: response.senderId,
+      content: response.content,
+      messageType: 'FILE',
+      createdAt: response.createdAt,
+    }, currentUserId);
+    message.attachments = [attachment];
+    upsertMessage(current.conversationId, message);
   };
 
-  const deleteAttachment = (messageId: string, attachmentId: string) => {
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      messages: conversation.messages.map((message) => message.id === messageId
+  const deleteAttachment = async (messageId: string, attachmentId: string) => {
+    const current = requireActivePrivateConversation();
+    await conversationApi.deleteAttachment(validId(attachmentId));
+    updateConversation(current.conversationId, (item) => {
+      const messages = item.messages.map((message) => message.id === messageId
         ? { ...message, attachments: message.attachments?.filter((file) => file.id !== attachmentId) }
-        : message),
-      sharedFiles: conversation.sharedFiles.filter((file) => file.id !== attachmentId),
-    } : conversation));
-    showPreviewNotice('Đã xóa tệp đính kèm khỏi bản xem trước.');
+        : message);
+      return { ...item, messages, sharedFiles: sharedFiles(messages) };
+    });
+    showNotice('Đã xóa tệp đính kèm.');
   };
 
   const loadOlderMessages = async () => {
-    await new Promise((resolve) => window.setTimeout(resolve, 650));
-    setConversations((current) => current.map((conversation) => conversation.id === activeId ? {
-      ...conversation,
-      hasMoreMessages: false,
-      messages: [
-        { id: `older-${activeId}-1`, sender: 'other' as const, content: 'Chào bạn, mình vừa tham gia Signify.', time: '08:42' },
-        { id: `older-${activeId}-2`, sender: 'me' as const, content: 'Rất vui được kết nối với bạn!', time: '08:45', status: 'seen' as const },
-        ...conversation.messages,
-      ],
-    } : conversation));
+    const current = requireActivePrivateConversation();
+    if (!current.hasMoreMessages || !current.nextMessageCursor) return;
+    const page = await conversationApi.messages(current.conversationId, current.nextMessageCursor);
+    const older = await enrichMessages(current.conversationId, page.messages, currentUserId);
+    updateConversation(current.conversationId, (item) => {
+      const existingIds = new Set(item.messages.map((message) => message.id));
+      const messages = sortMessages([...older.filter((message) => !existingIds.has(message.id)), ...item.messages]);
+      return {
+        ...item,
+        messages,
+        sharedFiles: sharedFiles(messages),
+        hasMoreMessages: page.hasMore,
+        nextMessageCursor: page.nextCursor,
+      };
+    });
+  };
+
+  const resolveAttachment = async (attachmentId: string): Promise<string> => {
+    const detail = await conversationApi.attachment(validId(attachmentId));
+    setConversations((current) => current.map((conversation) => {
+      const messages = conversation.messages.map((message) => ({
+        ...message,
+        attachments: message.attachments?.map((attachment) => attachment.id === attachmentId
+          ? { ...attachment, url: detail.url }
+          : attachment),
+      }));
+      return { ...conversation, messages, sharedFiles: sharedFiles(messages) };
+    }));
+    return detail.url;
+  };
+
+  const typingConversationId = activeConversation?.type === 'PRIVATE' ? activeConversation.conversationId : null;
+  const setTyping = useCallback((typing: boolean) => {
+    if (!typingConversationId) return;
+    publishToStomp(`/app/conversations/${typingConversationId}/typing`, {
+      type: typing ? 'TYPING_START' : 'TYPING_STOP',
+    });
+  }, [typingConversationId]);
+
+  const changeBlock = async () => {
+    if (!activeConversation?.userId) throw new Error('Không xác định được người dùng trong cuộc trò chuyện.');
+    const userId = activeConversation.userId;
+    const blocked = blockedUserIds.has(userId);
+    if (blocked) await userBlockApi.unblock(userId);
+    else await userBlockApi.block(userId);
+    setBlockedUserIds((current) => {
+      const next = new Set(current);
+      if (blocked) next.delete(userId); else next.add(userId);
+      return next;
+    });
+    showNotice(blocked ? `Đã bỏ chặn ${activeConversation.name}.` : `Đã chặn ${activeConversation.name}.`);
   };
 
   const startVideoCall = () => {
@@ -233,11 +583,6 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
       avatar: activeConversation.avatar,
       lastCall: activeConversation.lastSeen,
     });
-  };
-
-  const showPreviewNotice = (message: string) => {
-    setNotice(message);
-    window.setTimeout(() => setNotice(null), 3200);
   };
 
   return (
@@ -264,12 +609,22 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
             onSendAttachment={sendAttachment}
             onDeleteAttachment={deleteAttachment}
             onLoadOlder={loadOlderMessages}
+            onResolveAttachment={resolveAttachment}
+            onTypingChange={setTyping}
             onVideoCall={startVideoCall}
             videoCallPending={callCreating}
             onToggleInfo={() => setInfoOpen((value) => !value)}
-            onPreviewFeature={showPreviewNotice}
+            onPreviewFeature={showNotice}
           />
-          <ConversationInfo conversation={activeConversation} open={infoOpen} onClose={() => setInfoOpen(false)} onPreviewFeature={showPreviewNotice} />
+          <ConversationInfo
+            conversation={activeConversation}
+            open={infoOpen}
+            blocked={activeConversation.userId ? blockedUserIds.has(activeConversation.userId) : false}
+            onClose={() => setInfoOpen(false)}
+            onBlockChange={changeBlock}
+            onResolveAttachment={resolveAttachment}
+            onPreviewFeature={showNotice}
+          />
         </>
       ) : (
         <section className="flex min-w-0 flex-1 items-center justify-center bg-[#f7f5f9] px-8 text-center">

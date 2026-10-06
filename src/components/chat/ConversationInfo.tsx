@@ -5,23 +5,38 @@ import type { ChatConversationItem } from './types';
 interface ConversationInfoProps {
   conversation: ChatConversationItem;
   open: boolean;
+  blocked: boolean;
   onClose: () => void;
+  onBlockChange: () => Promise<void>;
+  onResolveAttachment: (attachmentId: string) => Promise<string>;
   onPreviewFeature: (message: string) => void;
 }
 
-export default function ConversationInfo({ conversation, open, onClose, onPreviewFeature }: ConversationInfoProps) {
-  const [blocked, setBlocked] = useState(false);
+export default function ConversationInfo({ conversation, open, blocked, onClose, onBlockChange, onResolveAttachment, onPreviewFeature }: ConversationInfoProps) {
   const [blockDialogOpen, setBlockDialogOpen] = useState(false);
+  const [blockPending, setBlockPending] = useState(false);
 
   if (!open) return null;
 
-  const confirmBlockChange = () => {
-    const nextBlocked = !blocked;
-    setBlocked(nextBlocked);
-    setBlockDialogOpen(false);
-    onPreviewFeature(nextBlocked
-      ? `Đã chặn ${conversation.name} trên bản xem trước.`
-      : `Đã bỏ chặn ${conversation.name} trên bản xem trước.`);
+  const confirmBlockChange = async () => {
+    setBlockPending(true);
+    try {
+      await onBlockChange();
+      setBlockDialogOpen(false);
+    } catch (error) {
+      onPreviewFeature(error instanceof Error ? error.message : 'Không thể cập nhật trạng thái chặn.');
+    } finally {
+      setBlockPending(false);
+    }
+  };
+
+  const openAttachment = async (attachmentId: string) => {
+    try {
+      const url = await onResolveAttachment(attachmentId);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      onPreviewFeature(error instanceof Error ? error.message : 'Không thể mở tệp đính kèm.');
+    }
   };
 
   return (
@@ -53,7 +68,7 @@ export default function ConversationInfo({ conversation, open, onClose, onPrevie
         </div>
       </div>
 
-      <div className="border-b-2 border-[#ddd4e3] bg-white/45 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-extrabold text-[#30423d]">Tệp đã chia sẻ</h3><button type="button" className="text-[10px] font-bold text-[#3f7c72]">Xem tất cả</button></div>{conversation.sharedFiles.length ? <div className="space-y-2">{conversation.sharedFiles.map((file) => <button key={file.id} type="button" onClick={() => onPreviewFeature('Xem tệp sẽ hoạt động khi API attachment được gắn.')} className="flex w-full items-center gap-3 rounded-2xl border border-[#e5ece9] p-3 text-left hover:bg-[#f7faf8]"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f4e8f1] text-[#8b687f]"><FileText className="h-4 w-4" /></span><span className="min-w-0"><strong className="block truncate text-[11px] text-[#354741]">{file.name}</strong><small className="mt-0.5 block text-[9px] text-[#8a9893]">{file.meta}</small></span></button>)}</div> : <p className="rounded-2xl bg-[#f7f9f8] px-4 py-5 text-center text-[11px] text-[#87958f]">Chưa có tệp được chia sẻ.</p>}</div>
+      <div className="border-b-2 border-[#ddd4e3] bg-white/45 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-extrabold text-[#30423d]">Tệp đã chia sẻ</h3><span className="text-[10px] font-bold text-[#3f7c72]">{conversation.sharedFiles.length} tệp</span></div>{conversation.sharedFiles.length ? <div className="space-y-2">{conversation.sharedFiles.map((file) => <button key={file.id} type="button" onClick={() => { void openAttachment(file.id); }} className="flex w-full items-center gap-3 rounded-2xl border border-[#e5ece9] p-3 text-left hover:bg-[#f7faf8]"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#f4e8f1] text-[#8b687f]"><FileText className="h-4 w-4" /></span><span className="min-w-0"><strong className="block truncate text-[11px] text-[#354741]">{file.name}</strong><small className="mt-0.5 block text-[9px] text-[#8a9893]">{file.meta}</small></span></button>)}</div> : <p className="rounded-2xl bg-[#f7f9f8] px-4 py-5 text-center text-[11px] text-[#87958f]">Chưa có tệp được chia sẻ.</p>}</div>
 
       <div className="border-t-2 border-[#ddd4e3] bg-[#fbf5f3] p-5">
         <button type="button" onClick={() => setBlockDialogOpen(true)} className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left transition ${blocked ? 'border-[#9fc1b7] bg-[#e5f1ed] text-[#356b61]' : 'border-[#dfb8ae] bg-white text-[#a05847] hover:bg-[#fff0ec]'}`}>
@@ -63,7 +78,7 @@ export default function ConversationInfo({ conversation, open, onClose, onPrevie
         </button>
       </div>
 
-      {blockDialogOpen && <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[#18231f]/45 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" onMouseDown={() => setBlockDialogOpen(false)}><div className="w-full max-w-md overflow-hidden rounded-[28px] border-2 border-[#dfb8ae] bg-[#fffaf8] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="border-b-2 border-[#ead1ca] bg-gradient-to-r from-[#f9e5df] to-[#eee7f3] p-6"><span className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ${blocked ? 'text-[#3f7c72]' : 'text-[#a65c49]'}`}>{blocked ? <UserCheck className="h-5 w-5" /> : <Ban className="h-5 w-5" />}</span><h3 className="mt-4 text-lg font-extrabold">{blocked ? `Bỏ chặn ${conversation.name}?` : `Chặn ${conversation.name}?`}</h3><p className="mt-2 text-xs leading-5 text-[#806860]">{blocked ? 'Hai bên có thể gửi tin nhắn mới sau khi bỏ chặn. Lịch sử cũ vẫn được giữ nguyên.' : 'Hai bên sẽ không thể gửi tin nhắn hoặc tệp mới. Lịch sử trò chuyện cũ không bị xóa.'}</p></div><div className="flex justify-end gap-3 p-5"><button type="button" onClick={() => setBlockDialogOpen(false)} className="rounded-xl border-2 border-[#d7c5c0] bg-white px-4 py-2.5 text-xs font-extrabold text-[#6f5d58]">Hủy</button><button type="button" onClick={confirmBlockChange} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold text-white shadow-md ${blocked ? 'bg-[#3f7c72]' : 'bg-[#ad5847]'}`}>{blocked ? 'Xác nhận bỏ chặn' : 'Xác nhận chặn'}</button></div></div></div>}
+      {blockDialogOpen && <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[#18231f]/45 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" onMouseDown={() => !blockPending && setBlockDialogOpen(false)}><div className="w-full max-w-md overflow-hidden rounded-[28px] border-2 border-[#dfb8ae] bg-[#fffaf8] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="border-b-2 border-[#ead1ca] bg-gradient-to-r from-[#f9e5df] to-[#eee7f3] p-6"><span className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-white shadow-sm ${blocked ? 'text-[#3f7c72]' : 'text-[#a65c49]'}`}>{blocked ? <UserCheck className="h-5 w-5" /> : <Ban className="h-5 w-5" />}</span><h3 className="mt-4 text-lg font-extrabold">{blocked ? `Bỏ chặn ${conversation.name}?` : `Chặn ${conversation.name}?`}</h3><p className="mt-2 text-xs leading-5 text-[#806860]">{blocked ? 'Hai bên có thể gửi tin nhắn mới sau khi bỏ chặn. Lịch sử cũ vẫn được giữ nguyên.' : 'Hai bên sẽ không thể gửi tin nhắn hoặc tệp mới. Lịch sử trò chuyện cũ không bị xóa.'}</p></div><div className="flex justify-end gap-3 p-5"><button type="button" disabled={blockPending} onClick={() => setBlockDialogOpen(false)} className="rounded-xl border-2 border-[#d7c5c0] bg-white px-4 py-2.5 text-xs font-extrabold text-[#6f5d58] disabled:opacity-50">Hủy</button><button type="button" disabled={blockPending} onClick={() => { void confirmBlockChange(); }} className={`rounded-xl px-4 py-2.5 text-xs font-extrabold text-white shadow-md disabled:opacity-50 ${blocked ? 'bg-[#3f7c72]' : 'bg-[#ad5847]'}`}>{blockPending ? 'Đang xử lý…' : blocked ? 'Xác nhận bỏ chặn' : 'Xác nhận chặn'}</button></div></div></div>}
     </aside>
   );
 }
