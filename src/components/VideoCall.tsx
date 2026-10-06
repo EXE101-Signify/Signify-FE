@@ -5,13 +5,30 @@ import {
   Send, Brain, Clock, HelpCircle, CheckCircle, Languages, AlertCircle 
 } from 'lucide-react';
 import { Contact, Screen, Message } from '../types';
+import { getStoredUser } from '../services/apiClient';
+import { videoCallApi, type VideoCallRecord } from '../services/videoCallApi';
+import { subscribeToAiPredictions, type AiConnectionState } from '../services/aiPredictionStream';
+import type { AiPredictionEvent } from '../services/aiPrediction';
+import { useWebRtcCall } from '../hooks/useWebRtcCall';
 
 interface VideoCallProps {
   contact: Contact;
+  callId: number;
+  call: VideoCallRecord;
+  onCallUpdated: (call: VideoCallRecord) => void;
   onEndCall: () => void;
 }
 
-export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
+const callStatusLabels: Record<VideoCallRecord['status'], string> = {
+  CALLING: 'Đang gọi',
+  ACCEPTED: 'Đã kết nối',
+  COMPLETED: 'Đã kết thúc',
+  REJECTED: 'Đã từ chối',
+  MISSED: 'Cuộc gọi nhỡ',
+  BUSY: 'Người nhận đang bận',
+};
+
+export default function VideoCall({ contact, callId, call, onCallUpdated, onEndCall }: VideoCallProps) {
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(true);
   const [avatarActive, setAvatarActive] = useState(true);
@@ -27,10 +44,44 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
   const [currentSubtitle, setCurrentSubtitle] = useState('Chào bạn, hôm nay thế nào rồi?');
   const [isTranslating, setIsTranslating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [callActionBusy, setCallActionBusy] = useState(false);
+  const [callActionError, setCallActionError] = useState<string | null>(null);
+  const [latestPrediction, setLatestPrediction] = useState<AiPredictionEvent | null>(null);
+  const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
+  const isReceiver = getStoredUser()?.userId === call.receiverId;
+  const { localVideoRef, remoteVideoRef, state: mediaState, error: mediaError, remoteVideoReady } =
+    useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
 
-  // Webcam reference
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    setLatestPrediction(null);
+    if (call.status !== 'ACCEPTED' || !Number.isSafeInteger(callId) || callId <= 0) {
+      setAiConnectionState('idle');
+      return;
+    }
+    return subscribeToAiPredictions(callId, setLatestPrediction, setAiConnectionState);
+  }, [callId, call.status]);
+
+  const performCallAction = async (action: 'accept' | 'reject' | 'end') => {
+    if (callActionBusy) return;
+    setCallActionBusy(true);
+    setCallActionError(null);
+    try {
+      const updated = await videoCallApi[action](callId);
+      if (updated.id !== callId) throw new Error('Máy chủ trả về mã cuộc gọi không khớp.');
+      onCallUpdated(updated);
+      if (action !== 'accept') onEndCall();
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      const message = status === 401 ? 'Phiên đăng nhập đã hết hạn.'
+        : status === 403 ? 'Bạn không có quyền thực hiện thao tác này.'
+        : status === 404 ? 'Không tìm thấy cuộc gọi.'
+        : status === 409 ? 'Trạng thái cuộc gọi đã thay đổi. Vui lòng thử lại.'
+        : error instanceof Error ? error.message : 'Không thể cập nhật cuộc gọi.';
+      setCallActionError(message);
+    } finally {
+      setCallActionBusy(false);
+    }
+  };
 
   // joint coordinate simulation variables
   const [skeletonWave, setSkeletonWave] = useState(0);
@@ -41,40 +92,6 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
     { value: 'normal', label: 'Bình thường (1.0x)' },
     { value: 'fast', label: 'Nhanh (1.5x)' }
   ];
-
-  // Request webcam access safely with fallback for sandboxed iframes
-  useEffect(() => {
-    if (cameraActive && typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-        .then(stream => {
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        })
-        .catch(err => {
-          console.warn('Real webcam not found or permission denied, using mock stream representation', err);
-        });
-    } else {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    }
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [cameraActive]);
 
   // Handle CSS-animated skeleton joint dots
   useEffect(() => {
@@ -154,18 +171,18 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
         <div id="call-status-bar" className="flex items-center justify-between z-10 bg-neutral-900/60 backdrop-blur-md p-3.5 rounded-2xl border border-white/5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-brand-primary shadow-lg">
-              <img 
-                src={contact.avatar} 
-                alt={contact.name} 
+              {contact.avatar ? <img
+                src={contact.avatar}
+                alt={contact.name}
                 className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
-              />
+              /> : <span className="flex h-full w-full items-center justify-center bg-brand-primary text-sm font-bold">{contact.name.charAt(0)}</span>}
             </div>
             <div>
               <h3 className="font-extrabold text-sm leading-tight text-white">{contact.name}</h3>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="w-2 h-2 bg-brand-secondary rounded-full animate-pulse"></span>
-                <span className="text-[10px] text-brand-secondary font-mono tracking-widest uppercase font-extrabold">ĐANG DỊCH TRỰC TIẾP • HD 1080p</span>
+                <span className="text-[10px] text-brand-secondary font-mono tracking-widest uppercase font-extrabold">{callStatusLabels[call.status]} · Cuộc gọi #{callId}</span>
               </div>
             </div>
           </div>
@@ -173,44 +190,38 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
           <div className="flex items-center gap-2.5">
             <div className="bg-brand-primary text-white px-3.5 py-1.5 rounded-xl border border-brand-primary-light/10 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-brand-primary/10">
               <Brain className="w-4 h-4" />
-              NHẬN DIỆN KÝ HIỆU: HOẠT ĐỘNG
+              {callStatusLabels[call.status]}
             </div>
           </div>
         </div>
 
-        {/* Video feed core canvas overlay with mockup signing lady */}
+        {/* Remote participant media */}
         <div id="call-video-grid" className="my-4 flex-1 bg-neutral-950 rounded-[24px] overflow-hidden relative border border-white/5 shadow-2xl flex items-center justify-center min-h-[460px]">
+          <div id="ai-sign-prediction" aria-live="polite" className="absolute left-6 top-6 z-20 rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md">
+            <span className="block text-[10px] font-bold uppercase tracking-widest text-brand-secondary">AI Sign</span>
+            {latestPrediction ? <>
+              <strong className="block text-3xl leading-tight">{latestPrediction.letter}</strong>
+              <span className="text-xs text-neutral-300">Độ tin cậy {(latestPrediction.confidence * 100).toFixed(2)}%</span>
+            </> : <span className="block pt-1 text-xs text-neutral-300">
+              {call.status !== 'ACCEPTED' ? 'Chờ cuộc gọi kết nối' : aiConnectionState === 'offline' ? 'AI không khả dụng' : 'Đang chờ nhận diện'}
+            </span>}
+            {latestPrediction && aiConnectionState === 'offline' && <span className="block text-[10px] text-amber-300">AI tạm ngắt kết nối</span>}
+          </div>
           
-          {/* Main Feed: Deaf caller signing */}
-          <img 
-            id="deaf-caller-main-video"
-            src="https://images.unsplash.com/photo-1543269865-cbf427effbad?auto=format&fit=crop&q=80&w=640" 
-            alt="Deaf signer caller" 
-            className="absolute inset-0 w-full h-full object-cover opacity-80"
-            referrerPolicy="no-referrer"
+          <video
+            id="remote-call-video"
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="absolute inset-0 h-full w-full object-cover"
           />
-
-          {/* AI Finger-mesh landmark mockup mapping points (Interactive canvas effect) */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-            {/* Draw nodes linking fingers to imitate real hand mesh scanning */}
-            <g transform="translate(180, 200)">
-              {/* Wrist node */}
-              <circle cx="100" cy="200" r="5" fill="#ffffff" className="animate-ping" />
-              {/* Joint links paths */}
-              <path d="M 100 200 L 70 150 L 50 110" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              <path d="M 100 200 L 95 130 L 90 80" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              <path d="M 100 200 L 120 135 L 130 90" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="3" fill="none" opacity="0.8" />
-              {/* Finger Tips nodes */}
-              <circle cx="50" cy="110" r="4.5" fill="#34d399" />
-              <circle cx="90" cy="80" r="4.5" fill="#34d399" />
-              <circle cx="130" cy="90" r="4.5" fill="#34d399" />
-              {/* Face landmarks mock */}
-              <circle cx="100" cy="-60" r="3.5" fill="#ffffff" />
-              <circle cx="85" cy="-70" r="2.5" fill="#ffffff" />
-              <circle cx="115" cy="-70" r="2.5" fill="#ffffff" />
-              <path d="M 85 -50 Q 100 -40 115 -50" stroke="#ffffff" strokeWidth="1.5" fill="none" />
-            </g>
-          </svg>
+          {!remoteVideoReady && <div className="absolute inset-0 flex items-center justify-center bg-neutral-950 text-sm text-neutral-300">
+            {mediaError || (call.status !== 'ACCEPTED' ? 'Chờ cuộc gọi được chấp nhận' : 'Đang chờ video từ người bên kia')}
+          </div>}
+          <div role="status" aria-live="polite" className="absolute right-4 bottom-4 z-20 rounded-lg bg-neutral-900/85 px-3 py-1.5 text-xs text-white">
+            {mediaState === 'connected' ? 'Đã kết nối' : mediaState === 'failed' ? 'Kết nối thất bại'
+              : mediaState === 'disconnected' ? 'Mất kết nối' : mediaState === 'connecting' ? 'Đang kết nối...' : 'Chưa kết nối'}
+          </div>
 
           {/* Floating Subtitle Overlay Card */}
           <div className="absolute inset-x-8 bottom-6 z-20 flex justify-center">
@@ -277,20 +288,19 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
           )}
 
           {/* User's PIP (Live WebCam Stream if active) */}
-          {cameraActive && (
-            <div id="pip-user-webcam" className="absolute top-6 right-6 w-32 sm:w-40 aspect-[4/3] bg-neutral-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden relative">
+          <div id="pip-user-webcam" className="absolute top-6 right-6 w-32 sm:w-40 aspect-[4/3] bg-neutral-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden relative">
               <video 
-                ref={videoRef} 
+                ref={localVideoRef}
                 autoPlay 
                 playsInline 
                 muted 
-                className="w-full h-full object-cover transform -scale-x-100"
+                className={`w-full h-full object-cover transform -scale-x-100 ${cameraActive ? '' : 'invisible'}`}
               />
+              {!cameraActive && <span className="absolute inset-0 flex items-center justify-center text-xs text-neutral-300">Camera đã tắt</span>}
               <span className="absolute bottom-2 left-2 bg-black/80 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-mono">
                 Tôi (Webcam)
               </span>
-            </div>
-          )}
+          </div>
 
         </div>
 
@@ -340,13 +350,19 @@ export default function VideoCall({ contact, onEndCall }: VideoCallProps) {
           </div>
 
           {/* End Call Button */}
+          {callActionError && <span role="alert" className="text-xs text-red-300">{callActionError}</span>}
+          {call.status === 'CALLING' && isReceiver && <div className="flex gap-2">
+            <button type="button" disabled={callActionBusy} onClick={() => performCallAction('accept')} className="rounded-xl bg-brand-secondary px-4 py-2 text-xs font-bold text-white">Chấp nhận</button>
+            <button type="button" disabled={callActionBusy} onClick={() => performCallAction('reject')} className="rounded-xl bg-brand-error px-4 py-2 text-xs font-bold text-white">Từ chối</button>
+          </div>}
           <button 
             id="call-end-phone-btn"
-            onClick={onEndCall}
+            disabled={callActionBusy}
+            onClick={() => call.status === 'ACCEPTED' ? performCallAction('end') : onEndCall()}
             className="px-6 py-3.5 bg-brand-error hover:bg-brand-error/95 text-white rounded-2xl text-xs font-black tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-brand-error/10"
           >
             <PhoneOff className="w-4.5 h-4.5" />
-            GÁC MÁY
+            {call.status === 'ACCEPTED' ? 'GÁC MÁY' : 'ĐÓNG MÀN HÌNH'}
           </button>
         </div>
 

@@ -42,6 +42,7 @@ interface ChatPanelProps {
   onDeleteAttachment: (messageId: string, attachmentId: string) => void;
   onLoadOlder: () => Promise<void>;
   onVideoCall: () => void;
+  videoCallPending: boolean;
   onToggleInfo: () => void;
   onPreviewFeature: (message: string) => void;
 }
@@ -77,6 +78,7 @@ export default function ChatPanel({
   onDeleteAttachment,
   onLoadOlder,
   onVideoCall,
+  videoCallPending,
   onToggleInfo,
   onPreviewFeature,
 }: ChatPanelProps) {
@@ -161,7 +163,7 @@ export default function ChatPanel({
 
         <div className="flex items-center gap-1.5 text-[#4e746c]">
           <button type="button" onClick={() => onPreviewFeature('Cuộc gọi thoại sẽ được nối khi backend call sẵn sàng.')} title="Gọi thoại" className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#f4f7f5] transition hover:bg-[#e8f1ed]"><Phone className="h-[18px] w-[18px]" /></button>
-          <button type="button" onClick={onVideoCall} title="Gọi video" className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#e5f1ed] text-[#326b62] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#d6e8e2]"><Video className="h-[18px] w-[18px]" /></button>
+          <button type="button" onClick={onVideoCall} disabled={videoCallPending} aria-busy={videoCallPending} title={videoCallPending ? 'Đang tạo cuộc gọi…' : 'Gọi video'} className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#e5f1ed] text-[#326b62] shadow-sm transition hover:-translate-y-0.5 hover:bg-[#d6e8e2] disabled:cursor-wait disabled:opacity-60">{videoCallPending ? <LoaderCircle className="h-[18px] w-[18px] animate-spin" /> : <Video className="h-[18px] w-[18px]" />}</button>
           <button type="button" onClick={onToggleInfo} title="Thông tin hội thoại" className="flex h-10 w-10 items-center justify-center rounded-2xl transition hover:bg-[#edf4f1]"><MoreHorizontal className="h-5 w-5" /></button>
         </div>
       </header>

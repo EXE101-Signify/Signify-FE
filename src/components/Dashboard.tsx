@@ -1,27 +1,91 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, X } from 'lucide-react';
-import type { Contact, Screen } from '../types';
+import type { CallableContact, Screen } from '../types';
+import { getStoredUser } from '../services/apiClient';
+import { conversationApi, type ConversationSummary } from '../services/conversationApi';
 import ConversationList from './chat/ConversationList';
 import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
-import { mockChatConversations } from './chat/mockChatData';
 import type { ChatConversationItem, ChatReactionType } from './chat/types';
+
+interface DashboardConversation extends ChatConversationItem {
+  conversationId: number;
+  userId: number | null;
+  type: ConversationSummary['type'];
+}
 
 interface DashboardProps {
   onNavigate: (screen: Screen) => void;
   onLogout: () => void;
-  onStartCall: (contact: Contact) => void;
+  onStartCall: (contact: CallableContact) => void;
+  callCreating: boolean;
+  callError: string | null;
 }
 
-export default function Dashboard({ onNavigate, onStartCall }: DashboardProps) {
-  const [conversations, setConversations] = useState<ChatConversationItem[]>(mockChatConversations);
-  const [activeId, setActiveId] = useState(mockChatConversations[0].id);
+function mapConversation(conversation: ConversationSummary, currentUserId: number | undefined): DashboardConversation | null {
+  if (!Number.isSafeInteger(conversation.conversationId) || conversation.conversationId <= 0) return null;
+  const peer = typeof currentUserId === 'number' && Number.isSafeInteger(currentUserId) && currentUserId > 0
+    ? conversation.participants?.find((participant) => participant.userId !== currentUserId)
+    : undefined;
+  const name = conversation.type === 'PRIVATE'
+    ? peer?.fullName || conversation.name || `Cuộc trò chuyện #${conversation.conversationId}`
+    : conversation.name || `Nhóm #${conversation.conversationId}`;
+  const updatedAt = Number.isSafeInteger(conversation.updatedAt) && conversation.updatedAt > 0
+    ? conversation.updatedAt : null;
+  const date = updatedAt === null ? null : new Date(updatedAt < 1_000_000_000_000 ? updatedAt * 1000 : updatedAt);
+
+  return {
+    id: `conversation-${conversation.conversationId}`,
+    conversationId: conversation.conversationId,
+    userId: conversation.type === 'PRIVATE' && peer && Number.isSafeInteger(peer.userId) ? peer.userId : null,
+    type: conversation.type,
+    name,
+    role: conversation.type === 'PRIVATE' ? 'Cuộc trò chuyện riêng' : 'Cuộc trò chuyện nhóm',
+    avatar: peer?.avatar ?? '',
+    presence: 'unknown',
+    lastSeen: 'Chưa có dữ liệu trạng thái',
+    lastMessage: 'Chưa có tin nhắn được tải',
+    time: date && !Number.isNaN(date.getTime())
+      ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '',
+    unread: 0,
+    messages: [],
+    sharedFiles: [],
+  };
+}
+
+export default function Dashboard({ onNavigate, onStartCall, callCreating, callError }: DashboardProps) {
+  const [conversations, setConversations] = useState<DashboardConversation[]>([]);
+  const [activeId, setActiveId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(true);
+  const [conversationsError, setConversationsError] = useState<string | null>(null);
 
-  const activeConversation = conversations.find((item) => item.id === activeId) ?? conversations[0];
+  useEffect(() => {
+    let active = true;
+    conversationApi.list()
+      .then((items) => {
+        if (!active) return;
+        const currentUserId = getStoredUser()?.userId;
+        const mapped = items
+          .map((item) => mapConversation(item, currentUserId))
+          .filter((item): item is DashboardConversation => item !== null);
+        setConversations(mapped);
+        setActiveId(mapped[0]?.id ?? '');
+        setConversationsError(null);
+      })
+      .catch((error: unknown) => {
+        if (active) setConversationsError(error instanceof Error ? error.message : 'Không thể tải cuộc trò chuyện.');
+      })
+      .finally(() => {
+        if (active) setLoadingConversations(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const activeConversation = conversations.find((item) => item.id === activeId);
   const visibleConversations = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return conversations.filter((conversation) => {
@@ -149,8 +213,20 @@ export default function Dashboard({ onNavigate, onStartCall }: DashboardProps) {
   };
 
   const startVideoCall = () => {
+    if (!activeConversation) {
+      setNotice('Chọn một cuộc trò chuyện trước khi gọi.');
+      return;
+    }
+    if (activeConversation.type !== 'PRIVATE' || !Number.isSafeInteger(activeConversation.userId)
+      || activeConversation.userId === null || !Number.isSafeInteger(activeConversation.conversationId)
+      || activeConversation.conversationId <= 0) {
+      setNotice('Chỉ có thể gọi từ cuộc trò chuyện riêng hợp lệ.');
+      return;
+    }
     onStartCall({
-      id: activeConversation.id,
+      id: String(activeConversation.userId),
+      userId: activeConversation.userId,
+      conversationId: activeConversation.conversationId,
       name: activeConversation.name,
       role: activeConversation.role,
       status: activeConversation.presence === 'unknown' ? 'offline' : activeConversation.presence,
@@ -177,20 +253,38 @@ export default function Dashboard({ onNavigate, onStartCall }: DashboardProps) {
         onOpenSettings={() => onNavigate('settings')}
         onOpenNotifications={() => onNavigate('notifications')}
       />
-      <ChatPanel
-        conversation={activeConversation}
-        onSend={sendMessage}
-        onEditMessage={editMessage}
-        onDeleteMessage={deleteMessage}
-        onToggleReaction={toggleReaction}
-        onSendAttachment={sendAttachment}
-        onDeleteAttachment={deleteAttachment}
-        onLoadOlder={loadOlderMessages}
-        onVideoCall={startVideoCall}
-        onToggleInfo={() => setInfoOpen((value) => !value)}
-        onPreviewFeature={showPreviewNotice}
-      />
-      <ConversationInfo conversation={activeConversation} open={infoOpen} onClose={() => setInfoOpen(false)} onPreviewFeature={showPreviewNotice} />
+      {activeConversation ? (
+        <>
+          <ChatPanel
+            conversation={activeConversation}
+            onSend={sendMessage}
+            onEditMessage={editMessage}
+            onDeleteMessage={deleteMessage}
+            onToggleReaction={toggleReaction}
+            onSendAttachment={sendAttachment}
+            onDeleteAttachment={deleteAttachment}
+            onLoadOlder={loadOlderMessages}
+            onVideoCall={startVideoCall}
+            videoCallPending={callCreating}
+            onToggleInfo={() => setInfoOpen((value) => !value)}
+            onPreviewFeature={showPreviewNotice}
+          />
+          <ConversationInfo conversation={activeConversation} open={infoOpen} onClose={() => setInfoOpen(false)} onPreviewFeature={showPreviewNotice} />
+        </>
+      ) : (
+        <section className="flex min-w-0 flex-1 items-center justify-center bg-[#f7f5f9] px-8 text-center">
+          <div>
+            <h2 className="text-lg font-extrabold text-[#263934]">{loadingConversations ? 'Đang tải cuộc trò chuyện…' : 'Chưa có cuộc trò chuyện'}</h2>
+            <p className="mt-2 max-w-sm text-sm leading-6 text-[#71817c]">{conversationsError || (loadingConversations ? 'Đang kết nối với danh sách conversation của bạn.' : 'Các cuộc trò chuyện sẽ xuất hiện tại đây khi có dữ liệu từ máy chủ.')}</p>
+          </div>
+        </section>
+      )}
+
+      {(conversationsError || callError) && (
+        <div role="alert" className="absolute bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-800 shadow-xl">
+          {callError || `Không thể tải cuộc trò chuyện: ${conversationsError}`}
+        </div>
+      )}
 
       {notice && (
         <div role="status" className="absolute bottom-5 left-1/2 z-50 flex max-w-lg -translate-x-1/2 items-start gap-3 rounded-2xl border border-[#cfe0da] bg-white px-4 py-3 text-xs font-semibold text-[#40564f] shadow-[0_18px_45px_rgba(45,72,64,0.18)]">
