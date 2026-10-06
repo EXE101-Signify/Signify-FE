@@ -296,7 +296,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
                   : 'border-transparent text-brand-text-muted hover:text-brand-text'
               }`}
             >
-              Thông tin cá nhân (FE-THU-08)
+              Thông tin cá nhân
             </button>
             <button
               type="button"
@@ -310,7 +310,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
                   : 'border-transparent text-brand-text-muted hover:text-brand-text'
               }`}
             >
-              Chỉnh sửa hồ sơ (FE-THU-09)
+              Chỉnh sửa hồ sơ
             </button>
             <button
               type="button"

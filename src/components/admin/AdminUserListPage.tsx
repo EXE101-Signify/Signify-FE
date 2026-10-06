@@ -222,7 +222,7 @@ export default function AdminUserListPage({ onNavigate, onLogout }: AdminUserLis
   return (
     <AppLayout
       title="Quản lý người dùng"
-      subtitle="Danh sách & Phân quyền thành viên hệ thống SignBridge (Task FE-THU-10)"
+      subtitle="Danh sách & Phân quyền thành viên hệ thống SignBridge"
       onNavigate={onNavigate}
       onLogout={onLogout}
     >

@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
-import { Lock, Mail, User, UserPlus } from 'lucide-react';
+import { Lock, Mail, User, UserCheck, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import AuthShell from './AuthShell';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
 
+  const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,6 +20,11 @@ export default function RegisterPage() {
 
     if (fullName.trim().length < 2) {
       setError('Vui lòng nhập họ và tên hợp lệ.');
+      return;
+    }
+
+    if (username.trim() && username.trim().length < 3) {
+      setError('Tên đăng nhập phải có ít nhất 3 ký tự.');
       return;
     }
 
@@ -43,6 +49,7 @@ export default function RegisterPage() {
           flow: 'register',
           email,
           registration: {
+            username: username.trim() || email.split('@')[0],
             fullName: fullName.trim(),
             email,
             password,
@@ -80,6 +87,29 @@ export default function RegisterPage() {
       </div>
 
       <form className="space-y-5" onSubmit={handleSubmit}>
+        <div>
+          <label
+            htmlFor="register-username"
+            className="block text-[10px] font-bold uppercase tracking-widest text-brand-text-muted"
+          >
+            Tên đăng nhập
+          </label>
+
+          <div className="relative mt-1.5">
+            <UserCheck className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-text-muted/65" />
+
+            <input
+              id="register-username"
+              type="text"
+              autoComplete="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="VD: thuha123 hoặc Thu Ha (Tùy chọn)"
+              className="block w-full rounded-xl border border-brand-border bg-brand-bg py-3 pl-10 pr-4 text-xs font-bold text-brand-text outline-none transition-all focus:bg-white focus:ring-2 focus:ring-brand-primary"
+            />
+          </div>
+        </div>
+
         <div>
           <label
             htmlFor="register-full-name"
