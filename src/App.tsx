@@ -410,7 +410,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                <RegisterPage />
+                <RegisterPage onLoginSuccess={handleLoginSuccess} />
               </motion.div>
             }
           />
@@ -614,9 +614,6 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AnimatePresence>
-      {isAuthenticated && getStoredAccessToken() && callSignalState === 'offline' && (
-        <div role="status" className="fixed left-4 bottom-4 z-40 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 shadow-md">Kết nối cuộc gọi thời gian thực tạm gián đoạn.</div>
-      )}
       {incomingError && Object.values(pendingCalls).length === 0 && (
         <div role="alert" className="fixed bottom-4 right-4 z-50 rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800 shadow-xl">{incomingError}</div>
       )}

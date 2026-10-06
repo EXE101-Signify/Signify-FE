@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
-  PhoneOff, Mic, MicOff, Video, VideoOff, Type, UserSquare, Sliders, 
+  PhoneOff, Mic, MicOff, Video, VideoOff, Type, Sliders,
   Send, Brain, Clock, HelpCircle, CheckCircle, Languages, AlertCircle 
 } from 'lucide-react';
 import { Contact, Screen, Message } from '../types';
@@ -10,6 +10,16 @@ import { videoCallApi, type VideoCallRecord } from '../services/videoCallApi';
 import { subscribeToAiPredictions, type AiConnectionState } from '../services/aiPredictionStream';
 import type { AiPredictionEvent } from '../services/aiPrediction';
 import { useWebRtcCall } from '../hooks/useWebRtcCall';
+import { useAiFrameCapture } from '../hooks/useAiFrameCapture';
+import {
+  DEFAULT_SUBTITLE_SETTINGS,
+  loadSubtitleSettings,
+  saveSubtitleSettings,
+  subtitleBackgroundColor,
+  subtitleTextStyle,
+  type SubtitleSettings,
+  type SubtitlePosition,
+} from '../utils/subtitleSettings';
 
 interface VideoCallProps {
   contact: Contact;
@@ -28,12 +38,36 @@ const callStatusLabels: Record<VideoCallRecord['status'], string> = {
   BUSY: 'Người nhận đang bận',
 };
 
+const SUBTITLE_TEXT_COLORS = [
+  { label: 'Trắng', value: '#FFFFFF' },
+  { label: 'Vàng', value: '#FDE047' },
+  { label: 'Đen', value: '#000000' },
+];
+
+const SUBTITLE_POSITIONS: Array<{ value: SubtitlePosition; label: string }> = [
+  { value: 'top', label: 'Trên' },
+  { value: 'center', label: 'Giữa' },
+  { value: 'bottom', label: 'Dưới' },
+];
+
+const SUBTITLE_POSITION_CLASSES: Record<SubtitlePosition, string> = {
+  top: 'top-32 sm:top-28',
+  center: 'inset-y-0 items-center',
+  bottom: 'bottom-32 sm:bottom-6',
+};
+
+const SUBTITLE_PREVIEW_POSITION_CLASSES: Record<SubtitlePosition, string> = {
+  top: 'top-2',
+  center: 'inset-y-0 items-center',
+  bottom: 'bottom-2',
+};
+
 export default function VideoCall({ contact, callId, call, onCallUpdated, onEndCall }: VideoCallProps) {
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(true);
-  const [avatarActive, setAvatarActive] = useState(true);
+  const [localVideoReady, setLocalVideoReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [fontSize, setFontSize] = useState<number>(14);
+  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>(loadSubtitleSettings);
   const [translationSpeed, setTranslationSpeed] = useState<string>('normal');
   const [inputMessage, setInputMessage] = useState('');
   const [chatLog, setChatLog] = useState<Message[]>([
@@ -41,7 +75,7 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
     { id: '2', sender: 'user', senderName: 'Tôi', text: 'Tôi đang rà soát đây. Mọi thứ có vẻ rất tốt.', timestamp: '14:22' },
     { id: '3', sender: 'other', senderName: contact.name, text: 'Chào bạn, hôm nay thế nào rồi?', timestamp: 'Vừa xong', isAISignRecognition: true }
   ]);
-  const [currentSubtitle, setCurrentSubtitle] = useState('Chào bạn, hôm nay thế nào rồi?');
+  const [currentSubtitle, setCurrentSubtitle] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [callActionBusy, setCallActionBusy] = useState(false);
@@ -49,8 +83,31 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
   const [latestPrediction, setLatestPrediction] = useState<AiPredictionEvent | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
   const isReceiver = getStoredUser()?.userId === call.receiverId;
-  const { localVideoRef, remoteVideoRef, state: mediaState, error: mediaError, remoteVideoReady } =
+  const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
+  // Each participant submits frames from their own visible webcam; the server broadcasts predictions to both.
+  const aiSource = { videoRef: localVideoRef, streamRef: localStreamRef };
+  const { unavailable: aiUnavailable } = useAiFrameCapture({
+    callId,
+    active: call.status === 'ACCEPTED' && mediaState === 'connected' && localVideoReady && remoteVideoReady && cameraActive,
+    ...aiSource,
+  });
+
+  const updateSubtitleSettings = (update: Partial<SubtitleSettings>) => {
+    setSubtitleSettings((current) => ({ ...current, ...update }));
+  };
+
+  const resetSubtitleSettings = () => setSubtitleSettings({ ...DEFAULT_SUBTITLE_SETTINGS });
+
+  const subtitleBackgroundStyle = {
+    backgroundColor: subtitleBackgroundColor(subtitleSettings.backgroundColor, subtitleSettings.backgroundOpacity),
+    borderRadius: `${subtitleSettings.borderRadius}px`,
+  };
+  const subtitleTextAppearance = subtitleTextStyle(subtitleSettings);
+
+  useEffect(() => {
+    saveSubtitleSettings(subtitleSettings);
+  }, [subtitleSettings]);
 
   useEffect(() => {
     setLatestPrediction(null);
@@ -58,7 +115,14 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
       setAiConnectionState('idle');
       return;
     }
-    return subscribeToAiPredictions(callId, setLatestPrediction, setAiConnectionState);
+    return subscribeToAiPredictions(callId, (prediction) => {
+      if (import.meta.env.DEV) console.debug('[AI] STOMP prediction received');
+      setLatestPrediction((previous) => {
+        if (previous?.letter === prediction.letter && Math.abs(previous.confidence - prediction.confidence) < 0.05) return previous;
+        if (import.meta.env.DEV) console.debug(`[AI] Subtitle updated: ${prediction.letter}`);
+        return prediction;
+      });
+    }, setAiConnectionState);
   }, [callId, call.status]);
 
   const performCallAction = async (action: 'accept' | 'reject' | 'end') => {
@@ -83,26 +147,12 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
     }
   };
 
-  // joint coordinate simulation variables
-  const [skeletonWave, setSkeletonWave] = useState(0);
-
   // Subtitle custom adjustments
   const availableSpeeds = [
     { value: 'slow', label: 'Chậm (0.75x)' },
     { value: 'normal', label: 'Bình thường (1.0x)' },
     { value: 'fast', label: 'Nhanh (1.5x)' }
   ];
-
-  // Handle CSS-animated skeleton joint dots
-  useEffect(() => {
-    let animationFrameId: number;
-    const animate = () => {
-      setSkeletonWave(prev => (prev + 0.05) % (Math.PI * 2));
-      animationFrameId = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => cancelAnimationFrame(animationFrameId);
-  }, []);
 
   // Post translation prompt to server-side Gemini gateway
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -198,13 +248,10 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
         {/* Remote participant media */}
         <div id="call-video-grid" className="my-4 flex-1 bg-neutral-950 rounded-[24px] overflow-hidden relative border border-white/5 shadow-2xl flex items-center justify-center min-h-[460px]">
           <div id="ai-sign-prediction" aria-live="polite" className="absolute left-6 top-6 z-20 rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md">
-            <span className="block text-[10px] font-bold uppercase tracking-widest text-brand-secondary">AI Sign</span>
-            {latestPrediction ? <>
-              <strong className="block text-3xl leading-tight">{latestPrediction.letter}</strong>
-              <span className="text-xs text-neutral-300">Độ tin cậy {(latestPrediction.confidence * 100).toFixed(2)}%</span>
-            </> : <span className="block pt-1 text-xs text-neutral-300">
-              {call.status !== 'ACCEPTED' ? 'Chờ cuộc gọi kết nối' : aiConnectionState === 'offline' ? 'AI không khả dụng' : 'Đang chờ nhận diện'}
-            </span>}
+            <span className="block text-[10px] font-bold tracking-widest text-brand-secondary">AI SIGN</span>
+            <span className="block text-2xl font-black">{latestPrediction?.letter ?? '—'}</span>
+            <span className="block text-[10px] text-neutral-300">{latestPrediction ? `Confidence: ${Math.round(latestPrediction.confidence * 100)}%` : 'Đang chờ nhận diện'}</span>
+            {aiUnavailable && <span className="block text-[10px] text-amber-300">AI tạm thời không khả dụng</span>}
             {latestPrediction && aiConnectionState === 'offline' && <span className="block text-[10px] text-amber-300">AI tạm ngắt kết nối</span>}
           </div>
           
@@ -224,82 +271,33 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
           </div>
 
           {/* Floating Subtitle Overlay Card */}
-          <div className="absolute inset-x-8 bottom-6 z-20 flex justify-center">
-            <div className="bg-neutral-900/95 backdrop-blur-md px-6 py-4 rounded-xl border border-white/10 text-center shadow-2xl max-w-lg">
-              <span className="text-[9px] font-black text-brand-secondary tracking-widest uppercase block mb-1">
-                DỊCH THỨC THÌ (VSL ➔ TV)
-              </span>
-              <p style={{ fontSize: `${fontSize}px` }} className="font-extrabold text-white tracking-wide leading-relaxed">
-                "{currentSubtitle}"
+          <div className={`absolute inset-x-8 z-20 flex justify-center ${SUBTITLE_POSITION_CLASSES[subtitleSettings.position]}`}>
+            <div style={subtitleBackgroundStyle} className="max-w-lg border border-white/10 px-6 py-4 text-center shadow-2xl backdrop-blur-md">
+              <p style={subtitleTextAppearance} className="font-extrabold tracking-wide leading-relaxed">
+                "{latestPrediction?.letter ?? (currentSubtitle || 'Đang chờ nhận diện')}"
               </p>
             </div>
           </div>
 
-          {/* Floating Picture-In-Picture for 3D Avatar Interpreter or User Camera */}
-          {avatarActive && (
-            <div id="pip-interpreter-avatar" className="absolute bottom-6 left-6 w-36 sm:w-44 aspect-[3/4] bg-neutral-900/90 rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col justify-between p-3.5 backdrop-blur-md">
-              <div className="flex items-center justify-between">
-                <span className="bg-brand-primary/20 text-brand-primary-light font-mono text-[9px] px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest">
-                  AVATAR 3D
-                </span>
-                <span className="w-1.5 h-1.5 bg-brand-secondary rounded-full animate-pulse"></span>
-              </div>
-
-              {/* Animated skeleton SVG reproducing signing gestures */}
-              <div className="flex-1 flex items-center justify-center py-2">
-                <svg className="w-24 h-24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  {/* Spine & Head */}
-                  <circle cx="50" cy="25" r="10" fill="#ffffff" />
-                  <line x1="50" y1="35" x2="50" y2="65" stroke="#ffffff" strokeWidth="3" />
-                  {/* Left Shoulder -> Elbow -> Hand */}
-                  <line 
-                  x1="50" y1="40" 
-                  x2="30" y2="45" 
-                  stroke="#a1a1aa" strokeWidth="3.5" 
-                  />
-                  <line 
-                  x1="30" y1="45" 
-                  x2="20" y2={(Math.sin(skeletonWave) * 15 + 40)} 
-                  stroke="#a1a1aa" strokeWidth="3" 
-                  />
-                  {/* Left Hand node */}
-                  <circle cx="20" cy={(Math.sin(skeletonWave) * 15 + 40)} r="4" fill="#34d399" />
-
-                  {/* Right Shoulder -> Elbow -> Hand */}
-                  <line 
-                  x1="50" y1="40" 
-                  x2="70" y2="45" 
-                  stroke="#a1a1aa" strokeWidth="3.5" 
-                  />
-                  <line 
-                  x1="70" y1="45" 
-                  x2="80" y2={(Math.cos(skeletonWave * 1.5) * 12 + 40)} 
-                  stroke="#a1a1aa" strokeWidth="3" 
-                  />
-                  {/* Right Hand node */}
-                  <circle cx="80" cy={(Math.cos(skeletonWave * 1.5) * 12 + 40)} r="4" fill="#34d399" />
-                </svg>
-              </div>
-
-              <div className="text-center">
-                <span className="text-[10px] text-white font-bold tracking-wider uppercase leading-tight block">Kính Phiên Dịch</span>
-              </div>
-            </div>
-          )}
-
-          {/* User's PIP (Live WebCam Stream if active) */}
-          <div id="pip-user-webcam" className="absolute top-6 right-6 w-32 sm:w-40 aspect-[4/3] bg-neutral-900 rounded-2xl border border-white/10 shadow-2xl overflow-hidden relative">
-              <video 
-                ref={localVideoRef}
-                autoPlay 
-                playsInline 
-                muted 
-                className={`w-full h-full object-cover transform -scale-x-100 ${cameraActive ? '' : 'invisible'}`}
-              />
-              {!cameraActive && <span className="absolute inset-0 flex items-center justify-center text-xs text-neutral-300">Camera đã tắt</span>}
-              <span className="absolute bottom-2 left-2 bg-black/80 px-2 py-0.5 rounded text-[9px] uppercase tracking-wider font-mono">
-                Tôi (Webcam)
+          {/* Local webcam uses the stream already attached by useWebRtcCall. */}
+          <div id="pip-user-webcam" className="absolute bottom-3 left-3 z-20 aspect-video w-32 overflow-hidden rounded-2xl border border-white/20 bg-neutral-900 shadow-xl sm:bottom-6 sm:left-6 sm:w-[200px] md:w-[224px]">
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              onLoadedData={() => setLocalVideoReady(true)}
+              onEmptied={() => setLocalVideoReady(false)}
+              className={`h-full w-full object-cover -scale-x-100 ${cameraActive && localVideoReady && !mediaError ? '' : 'invisible'}`}
+            />
+            {(!cameraActive || !localVideoReady || mediaError) && (
+              <span className="absolute inset-0 flex items-center justify-center bg-neutral-900 px-2 text-center text-[11px] text-neutral-300 sm:text-xs">
+                Camera chưa bật
               </span>
+            )}
+            <span className="absolute left-2 top-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur-sm">
+              Bạn
+            </span>
           </div>
 
         </div>
@@ -328,16 +326,6 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
           </div>
 
           <div className="flex items-center gap-2">
-            {/* 3D Avatar Toggle */}
-            <button 
-              id="call-toggle-avatar-btn"
-              onClick={() => setAvatarActive(!avatarActive)}
-              className={`px-4 py-3 rounded-2xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${avatarActive ? 'bg-brand-primary text-white shadow-md shadow-brand-primary/10' : 'bg-neutral-900 text-neutral-400'}`}
-            >
-              <UserSquare className="w-4.5 h-4.5" />
-              Avatar 3D: {avatarActive ? 'MỞ' : 'TẤT'}
-            </button>
-
             {/* Subtitles custom control */}
             <button 
               id="call-toggle-sub-panel-btn"
@@ -384,42 +372,141 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
 
         {/* Subtitle adjustment Popover overlay inline inside sidebar to maximize vertical screen efficiency */}
         {showSettings && (
-          <div id="call-subsettings-pop" className="bg-neutral-900 border-b border-white/5 p-5 space-y-4 shadow-2xl relative">
-            <h4 className="text-xs font-black tracking-wider text-white uppercase flex items-center gap-1.5 font-sans">
-              <Sliders className="w-4 h-4" /> cấu hình phụ đề
-            </h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5">Cỡ chữ phụ đề</label>
-                <div className="flex items-center gap-2">
-                  <input 
-                    id="sub-font-slider"
-                    type="range" 
-                    min="12" 
-                    max="22" 
-                    value={fontSize}
-                    onChange={(e) => setFontSize(Number(e.target.value))}
-                    className="w-full accent-brand-primary h-1.5 bg-neutral-800 rounded-lg cursor-pointer"
-                  />
-                  <span className="text-xs font-mono">{fontSize}px</span>
+          <section id="call-subsettings-pop" aria-label="Cấu hình phụ đề" className="relative max-h-[48vh] space-y-3 overflow-y-auto overscroll-contain border-b border-white/5 bg-neutral-900 p-4 shadow-2xl sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="flex items-center gap-1.5 font-sans text-xs font-black tracking-wider text-white">
+                <Sliders className="h-4 w-4" /> CẤU HÌNH PHỤ ĐỀ
+              </h4>
+              <button type="button" onClick={resetSubtitleSettings} className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] font-bold text-neutral-300 transition hover:border-white/25 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-secondary">
+                Đặt lại mặc định
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div className="col-span-2">
+                <label htmlFor="sub-font-slider" className="mb-1 flex items-center justify-between text-[10px] font-bold text-neutral-300">
+                  <span>Cỡ chữ phụ đề</span><output htmlFor="sub-font-slider" className="text-xs tabular-nums text-white">{subtitleSettings.fontSize}px</output>
+                </label>
+                <input
+                  id="sub-font-slider"
+                  type="range"
+                  min="12"
+                  max="22"
+                  step="1"
+                  value={subtitleSettings.fontSize}
+                  aria-label="Cỡ chữ phụ đề"
+                  onChange={(event) => updateSubtitleSettings({ fontSize: Number(event.target.value) })}
+                  className="h-1.5 w-full cursor-pointer accent-brand-primary"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label htmlFor="sub-background-opacity" className="mb-1 flex items-center justify-between text-[10px] font-bold text-neutral-300">
+                  <span>Độ mờ nền</span><output htmlFor="sub-background-opacity" className="text-xs tabular-nums text-white">{subtitleSettings.backgroundOpacity}%</output>
+                </label>
+                <input
+                  id="sub-background-opacity"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="5"
+                  value={subtitleSettings.backgroundOpacity}
+                  aria-label="Độ mờ nền"
+                  onChange={(event) => updateSubtitleSettings({ backgroundOpacity: Number(event.target.value) })}
+                  className="h-1.5 w-full cursor-pointer accent-brand-primary"
+                />
+              </div>
+
+              <fieldset className="col-span-2 min-w-0">
+                <legend className="mb-1.5 text-[10px] font-bold text-neutral-300">Màu chữ</legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {SUBTITLE_TEXT_COLORS.map((color) => {
+                    const selected = subtitleSettings.textColor === color.value;
+                    return (
+                      <button
+                        key={color.value}
+                        type="button"
+                        aria-label={`Màu chữ ${color.label}`}
+                        aria-pressed={selected}
+                        onClick={() => updateSubtitleSettings({ textColor: color.value })}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[10px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-secondary ${selected ? 'border-brand-secondary bg-white/10 text-white ring-1 ring-brand-secondary' : 'border-white/10 text-neutral-300 hover:border-white/25'}`}
+                      >
+                        <span aria-hidden="true" className="h-3 w-3 rounded-full border border-white/30" style={{ backgroundColor: color.value }} />
+                        {color.label}
+                      </button>
+                    );
+                  })}
                 </div>
+              </fieldset>
+
+              <fieldset className="col-span-2 min-w-0">
+                <legend className="mb-1.5 text-[10px] font-bold text-neutral-300">Màu nền</legend>
+                <div className="flex flex-wrap items-center gap-2">
+                  {[{ label: 'Đen', value: '#000000' }, { label: 'Trắng', value: '#FFFFFF' }].map((color) => {
+                    const selected = subtitleSettings.backgroundColor === color.value;
+                    return (
+                      <button
+                        key={color.value}
+                        type="button"
+                        aria-label={`Màu nền ${color.label}`}
+                        aria-pressed={selected}
+                        onClick={() => updateSubtitleSettings({ backgroundColor: color.value })}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-[10px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-secondary ${selected ? 'border-brand-secondary bg-white/10 text-white ring-1 ring-brand-secondary' : 'border-white/10 text-neutral-300 hover:border-white/25'}`}
+                      >
+                        <span aria-hidden="true" className="h-3 w-3 rounded-full border border-white/30" style={{ backgroundColor: color.value }} />
+                        {color.label}
+                      </button>
+                    );
+                  })}
+                  <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-[10px] font-semibold text-neutral-300 transition hover:border-white/25 focus-within:outline focus-within:outline-2 focus-within:outline-brand-secondary">
+                    <span aria-hidden="true" className="h-4 w-4 rounded border border-white/30" style={{ backgroundColor: subtitleSettings.backgroundColor }} />
+                    Tùy chỉnh
+                    <input
+                      type="color"
+                      value={subtitleSettings.backgroundColor}
+                      aria-label="Chọn màu nền tùy chỉnh"
+                      onChange={(event) => updateSubtitleSettings({ backgroundColor: event.target.value.toUpperCase() })}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <div>
+                <label htmlFor="sub-edge-style" className="mb-1.5 block text-[10px] font-bold text-neutral-300">Kiểu viền chữ</label>
+                <select id="sub-edge-style" value={subtitleSettings.edgeStyle} aria-label="Kiểu viền chữ" onChange={(event) => updateSubtitleSettings({ edgeStyle: event.target.value as SubtitleSettings['edgeStyle'] })} className="w-full rounded-lg border border-white/10 bg-neutral-950 px-2.5 py-2 text-xs text-white focus:border-brand-secondary focus:outline-none">
+                  <option value="none">Không</option>
+                  <option value="shadow">Bóng</option>
+                  <option value="outline">Viền</option>
+                </select>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-widest mb-1.5">Tốc độ dịch thuật</label>
-                <select 
-                  id="sub-speed-select"
-                  value={translationSpeed}
-                  onChange={(e) => setTranslationSpeed(e.target.value)}
-                  className="block w-full py-1.5 px-3 bg-neutral-800 border border-white/10 rounded-lg text-xs font-bold text-white outline-none"
-                >
-                  {availableSpeeds.map(spd => (
-                    <option key={spd.value} value={spd.value}>{spd.label}</option>
-                  ))}
+                <label htmlFor="sub-border-radius" className="mb-1 flex items-center justify-between text-[10px] font-bold text-neutral-300">
+                  <span>Bo góc nền</span><output htmlFor="sub-border-radius" className="text-xs tabular-nums text-white">{subtitleSettings.borderRadius}px</output>
+                </label>
+                <input id="sub-border-radius" type="range" min="0" max="16" step="1" value={subtitleSettings.borderRadius} aria-label="Bo góc nền" onChange={(event) => updateSubtitleSettings({ borderRadius: Number(event.target.value) })} className="h-1.5 w-full cursor-pointer accent-brand-primary" />
+              </div>
+
+              <div className="col-span-2">
+                <label htmlFor="sub-position" className="mb-1.5 block text-[10px] font-bold text-neutral-300">Vị trí phụ đề</label>
+                <select id="sub-position" value={subtitleSettings.position} aria-label="Vị trí phụ đề" onChange={(event) => updateSubtitleSettings({ position: event.target.value as SubtitlePosition })} className="w-full rounded-lg border border-white/10 bg-neutral-950 px-2.5 py-2 text-xs text-white focus:border-brand-secondary focus:outline-none">
+                  {SUBTITLE_POSITIONS.map((position) => <option key={position.value} value={position.value}>{position.label}</option>)}
                 </select>
               </div>
+
+              <div className="col-span-2">
+                <span className="mb-1.5 block text-[10px] font-bold text-neutral-300">Xem trước</span>
+                <div className="relative h-24 overflow-hidden rounded-xl border border-white/10 bg-neutral-950 p-2">
+                  <div className={`absolute inset-x-2 flex justify-center ${SUBTITLE_PREVIEW_POSITION_CLASSES[subtitleSettings.position]}`}>
+                    <p style={{ ...subtitleBackgroundStyle, ...subtitleTextAppearance }} className="max-w-full px-3 py-1 text-center font-extrabold leading-relaxed">
+                      Chào bạn, hôm nay thế nào rồi?
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
         )}
 
         {/* Chat Logs Area */}

@@ -52,6 +52,11 @@ body {
   line-height: 1.5;
 }
 
+html:has(#register-page),
+body:has(#register-page) {
+  min-width: 320px;
+}
+
 button,
 input,
 select,

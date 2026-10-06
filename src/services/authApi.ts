@@ -22,6 +22,7 @@ export interface LoginParams {
 export interface RegisterParams {
   username: string;
   password: string;
+  otp: string;
   email?: string;
   firstName?: string;
   lastName?: string;
@@ -63,6 +64,7 @@ export const authApi = {
     const requestObj = {
       username: params.username,
       password: params.password,
+      otp: params.otp,
       email: params.email || undefined,
       firstName: params.firstName || undefined,
       lastName: params.lastName || undefined,
