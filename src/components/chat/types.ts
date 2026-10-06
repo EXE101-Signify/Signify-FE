@@ -14,6 +14,7 @@ export interface ChatAttachmentItem {
   mimeType: string;
   size: number;
   url?: string;
+  createdAt?: number;
 }
 
 export interface ChatMessageItem {
@@ -22,6 +23,7 @@ export interface ChatMessageItem {
   content: string;
   time: string;
   status?: 'sent' | 'seen';
+  createdAt?: number;
   translatedText?: string;
   edited?: boolean;
   reactions?: ChatReactionItem[];
@@ -41,6 +43,9 @@ export interface ChatConversationItem {
   pinned?: boolean;
   typing?: boolean;
   hasMoreMessages?: boolean;
+  nextMessageCursor?: number | null;
+  messagesLoaded?: boolean;
+  loadingMessages?: boolean;
   messages: ChatMessageItem[];
   sharedFiles: Array<ChatAttachmentItem & { meta: string }>;
 }

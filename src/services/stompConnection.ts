@@ -15,6 +15,23 @@ const stateListeners = new Set<StateListener>();
 let client: Client | null = null;
 let connectionState: StompConnectionState = 'offline';
 let disconnectScheduled = false;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopPresenceHeartbeat(): void {
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
+function startPresenceHeartbeat(activeClient: Client): void {
+  stopPresenceHeartbeat();
+  const send = () => {
+    if (client !== activeClient || !activeClient.connected) return;
+    try { activeClient.publish({ destination: '/app/presence/heartbeat', body: '{}' }); }
+    catch { /* Presence is best effort; reconnect handles a closed socket. */ }
+  };
+  send();
+  heartbeatTimer = setInterval(send, 25_000);
+}
 
 function setConnectionState(state: StompConnectionState): void {
   connectionState = state;
@@ -67,9 +84,11 @@ function ensureConnected(): void {
         catch { subscriptionsReady = false; }
       }
       setConnectionState(subscriptionsReady ? 'online' : 'offline');
+      startPresenceHeartbeat(activeClient);
     },
     onWebSocketClose: () => {
       if (client !== activeClient) return;
+      stopPresenceHeartbeat();
       for (const entry of destinations.values()) entry.subscription = null;
       setConnectionState('offline');
     },
@@ -120,6 +139,7 @@ export function subscribeToStomp(
         if (destinations.size !== 0 || !client) return;
         const oldClient = client;
         client = null;
+        stopPresenceHeartbeat();
         void oldClient.deactivate().catch(() => {});
         setConnectionState('offline');
       });
