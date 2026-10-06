@@ -22,9 +22,14 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const cameraEnabledRef = useRef(cameraActive);
+  const micEnabledRef = useRef(micActive);
   const [state, setState] = useState<MediaConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [remoteVideoReady, setRemoteVideoReady] = useState(false);
+
+  cameraEnabledRef.current = cameraActive;
+  micEnabledRef.current = micActive;
 
   useEffect(() => {
     localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = cameraActive; });
@@ -79,7 +84,10 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       }
       localStreamRef.current?.getTracks().forEach((track) => track.stop());
       localStreamRef.current = null;
-      remoteStreamRef.current?.getTracks().forEach((track) => track.stop());
+      remoteStreamRef.current?.getTracks().forEach((track) => {
+        track.onended = null;
+        track.stop();
+      });
       remoteStreamRef.current = null;
       if (localVideoRef.current) localVideoRef.current.srcObject = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
@@ -95,8 +103,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
 
     const flushLocalIce = () => {
       while (localIce.length && signalingOnline && !disposed) {
-        const candidate = localIce[0];
-        if (!send('WEBRTC_ICE_CANDIDATE', candidate as Record<string, unknown>)) break;
+        if (!send('WEBRTC_ICE_CANDIDATE', localIce[0] as Record<string, unknown>)) break;
         localIce.shift();
       }
     };
@@ -155,7 +162,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           sdpMLineIndex: signal.payload.sdpMLineIndex as number | null,
         };
         if (pc.remoteDescription) await pc.addIceCandidate(candidate);
-        else remoteIce.push(candidate);
+        else if (remoteIce.length < 256) remoteIce.push(candidate);
       }
     };
 
@@ -164,8 +171,8 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       if (disposed) { stream.getTracks().forEach((track) => track.stop()); return; }
       localStreamRef.current = stream;
-      stream.getVideoTracks().forEach((track) => { track.enabled = cameraActive; });
-      stream.getAudioTracks().forEach((track) => { track.enabled = micActive; });
+      stream.getVideoTracks().forEach((track) => { track.enabled = cameraEnabledRef.current; });
+      stream.getAudioTracks().forEach((track) => { track.enabled = micEnabledRef.current; });
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
       const pc = new RTCPeerConnection({ iceServers: iceServers() });
@@ -180,6 +187,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
         event.track.onended = () => {
           if (!disposed && event.track.kind === 'video') setRemoteVideoReady(false);
         };
+        void remoteVideoRef.current?.play().catch(() => {});
       };
       pc.onicecandidate = (event) => {
         if (disposed || !event.candidate) return;
@@ -206,12 +214,22 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
         if (disposed) return;
         signalingOnline = signalState === 'online';
         if (signalingOnline) {
-          queueMicrotask(() => { announceReady(); flushLocalIce(); });
+          // subscribeToStomp reports an existing online socket before subscribing this destination.
+          queueMicrotask(() => {
+            if (disposed) return;
+            announceReady();
+            if (isCaller && pc.localDescription?.type === 'offer' && !pc.remoteDescription)
+              send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
+            if (isReceiver && pc.localDescription?.type === 'answer' && pc.connectionState !== 'connected')
+              send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
+            flushLocalIce();
+          });
         }
       });
       if (isReceiver) readyTimer = setInterval(announceReady, 2000);
     };
 
+    // Deferring acquisition avoids a duplicate permission request during React StrictMode's setup/cleanup replay.
     void Promise.resolve().then(() => { if (!disposed) return start(); }).catch((cause: unknown) => {
       fail(cause instanceof Error && cause.name === 'NotAllowedError'
         ? 'Cần cấp quyền camera và micro để tham gia cuộc gọi.'
