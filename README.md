@@ -1,3 +1,9 @@
+## AI frame source for MVP calls
+
+For the current call flow, the caller is the hearing viewer and the receiver is the signer. `App.tsx` assigns `SIGNER` only when the authenticated user's ID matches `receiverId`; all other clients receive `VIEWER`. Only `SIGNER` captures its existing local WebRTC camera for AI. Both participants may still receive `AI_SIGN_PREDICTION` events and see the subtitle.
+
+This role is enforced in the frontend only. The backend prediction endpoint still accepts images from either authenticated participant in an active call; a direct API client can submit viewer frames. A trusted signer identity and server-side enforcement are required before treating this as a security boundary.
+
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
 </div>

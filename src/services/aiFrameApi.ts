@@ -1,7 +1,7 @@
 import { apiFetch } from './apiClient';
 import type { AiPredictionEvent } from './aiPrediction';
 
-export async function sendAiFrame(callId: number, image: Blob, signal: AbortSignal): Promise<AiPredictionEvent> {
+export async function sendAiFrame(callId: number, image: Blob, signal: AbortSignal): Promise<AiPredictionEvent | null> {
   const form = new FormData();
   form.append('image', image, 'frame.jpg');
   const response = await apiFetch<AiPredictionEvent>(`/api/calls/${callId}/predictions`, {
@@ -9,6 +9,7 @@ export async function sendAiFrame(callId: number, image: Blob, signal: AbortSign
     body: form,
     signal,
   });
+  if (response.status === 204) return null;
   const prediction = response.data;
   if (!prediction || prediction.type !== 'AI_SIGN_PREDICTION' || prediction.callId !== callId
     || !/^[A-Z]$/.test(prediction.letter)

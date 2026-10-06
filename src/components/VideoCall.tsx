@@ -7,7 +7,8 @@ import {
 import { Contact, Screen, Message } from '../types';
 import { getStoredUser } from '../services/apiClient';
 import { videoCallApi, type VideoCallRecord } from '../services/videoCallApi';
-import { subscribeToAiPredictions, type AiConnectionState } from '../services/aiPredictionStream';
+import { subscribeToAiCallEvents, type AiConnectionState } from '../services/aiPredictionStream';
+import { sendAiTextCommand, type AiTextCommand } from '../services/aiTextApi';
 import type { AiPredictionEvent } from '../services/aiPrediction';
 import { useWebRtcCall } from '../hooks/useWebRtcCall';
 import { useAiFrameCapture } from '../hooks/useAiFrameCapture';
@@ -21,10 +22,13 @@ import {
   type SubtitlePosition,
 } from '../utils/subtitleSettings';
 
+type AiCallRole = 'SIGNER' | 'VIEWER';
+
 interface VideoCallProps {
   contact: Contact;
   callId: number;
   call: VideoCallRecord;
+  role: AiCallRole;
   onCallUpdated: (call: VideoCallRecord) => void;
   onEndCall: () => void;
 }
@@ -62,7 +66,7 @@ const SUBTITLE_PREVIEW_POSITION_CLASSES: Record<SubtitlePosition, string> = {
   bottom: 'bottom-2',
 };
 
-export default function VideoCall({ contact, callId, call, onCallUpdated, onEndCall }: VideoCallProps) {
+export default function VideoCall({ contact, callId, call, role, onCallUpdated, onEndCall }: VideoCallProps) {
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(true);
   const [localVideoReady, setLocalVideoReady] = useState(false);
@@ -81,17 +85,28 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
   const [callActionBusy, setCallActionBusy] = useState(false);
   const [callActionError, setCallActionError] = useState<string | null>(null);
   const [latestPrediction, setLatestPrediction] = useState<AiPredictionEvent | null>(null);
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [textActionBusy, setTextActionBusy] = useState(false);
+  const [textActionError, setTextActionError] = useState<string | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
   const isReceiver = getStoredUser()?.userId === call.receiverId;
   const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
-  // Each participant submits frames from their own visible webcam; the server broadcasts predictions to both.
+  // MVP call roles: the receiver signs and the caller views. Only the signer's local camera is sent to AI.
   const aiSource = { videoRef: localVideoRef, streamRef: localStreamRef };
+  const aiCaptureActive = role === 'SIGNER' && call.status === 'ACCEPTED'
+    && mediaState === 'connected' && localVideoReady && remoteVideoReady && cameraActive;
   const { unavailable: aiUnavailable } = useAiFrameCapture({
     callId,
-    active: call.status === 'ACCEPTED' && mediaState === 'connected' && localVideoReady && remoteVideoReady && cameraActive,
+    active: aiCaptureActive,
     ...aiSource,
   });
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    if (role === 'VIEWER') console.debug('[AI] capture disabled for viewer');
+    else if (aiCaptureActive) console.debug('[AI] role=SIGNER capture started');
+  }, [role, aiCaptureActive]);
 
   const updateSubtitleSettings = (update: Partial<SubtitleSettings>) => {
     setSubtitleSettings((current) => ({ ...current, ...update }));
@@ -111,19 +126,38 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
 
   useEffect(() => {
     setLatestPrediction(null);
+    setAiText(null);
+    setTextActionError(null);
     if (call.status !== 'ACCEPTED' || !Number.isSafeInteger(callId) || callId <= 0) {
       setAiConnectionState('idle');
       return;
     }
-    return subscribeToAiPredictions(callId, (prediction) => {
-      if (import.meta.env.DEV) console.debug('[AI] STOMP prediction received');
-      setLatestPrediction((previous) => {
-        if (previous?.letter === prediction.letter && Math.abs(previous.confidence - prediction.confidence) < 0.05) return previous;
-        if (import.meta.env.DEV) console.debug(`[AI] Subtitle updated: ${prediction.letter}`);
-        return prediction;
-      });
+    let active = true;
+    const unsubscribe = subscribeToAiCallEvents(callId, (prediction) => {
+      if (!active) return;
+      if (import.meta.env.DEV) console.debug(`[AI] Accepted letter: ${prediction.letter}`);
+      setLatestPrediction(prediction);
+    }, (update) => {
+      if (active) setAiText(update.text);
     }, setAiConnectionState);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [callId, call.status]);
+
+  const performTextAction = async (command: AiTextCommand) => {
+    if (role !== 'SIGNER' || call.status !== 'ACCEPTED' || textActionBusy) return;
+    setTextActionBusy(true);
+    setTextActionError(null);
+    try {
+      await sendAiTextCommand(callId, command);
+    } catch (error) {
+      setTextActionError(error instanceof Error ? error.message : 'Không thể cập nhật văn bản AI.');
+    } finally {
+      setTextActionBusy(false);
+    }
+  };
 
   const performCallAction = async (action: 'accept' | 'reject' | 'end') => {
     if (callActionBusy) return;
@@ -273,8 +307,8 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
           {/* Floating Subtitle Overlay Card */}
           <div className={`absolute inset-x-8 z-20 flex justify-center ${SUBTITLE_POSITION_CLASSES[subtitleSettings.position]}`}>
             <div style={subtitleBackgroundStyle} className="max-w-lg border border-white/10 px-6 py-4 text-center shadow-2xl backdrop-blur-md">
-              <p style={subtitleTextAppearance} className="font-extrabold tracking-wide leading-relaxed">
-                "{latestPrediction?.letter ?? (currentSubtitle || 'Đang chờ nhận diện')}"
+              <p style={subtitleTextAppearance} className="font-extrabold tracking-wide leading-relaxed whitespace-pre-wrap">
+                "{call.status === 'ACCEPTED' ? (aiText !== null ? (aiText || 'Đang chờ nhận diện') : (currentSubtitle || 'Đang chờ nhận diện')) : 'Đang chờ nhận diện'}"
               </p>
             </div>
           </div>
@@ -324,6 +358,23 @@ export default function VideoCall({ contact, callId, call, onCallUpdated, onEndC
               {cameraActive ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
             </button>
           </div>
+
+          {role === 'SIGNER' && call.status === 'ACCEPTED' && (
+            <div className="flex flex-wrap items-center gap-2" aria-label="Điều khiển văn bản AI">
+              {(['space', 'delete', 'clear'] as const).map((command) => (
+                <button
+                  key={command}
+                  type="button"
+                  disabled={textActionBusy}
+                  onClick={() => void performTextAction(command)}
+                  className="rounded-xl bg-neutral-900 px-3 py-2 text-xs font-bold text-white hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  {command.toUpperCase()}
+                </button>
+              ))}
+              {textActionError && <span role="alert" className="text-xs text-red-300">{textActionError}</span>}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             {/* Subtitles custom control */}

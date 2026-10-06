@@ -68,11 +68,11 @@ export function useAiFrameCapture({ callId, active, videoRef, streamRef }: Captu
           const requestController = controller;
           const requestTimeout = setTimeout(() => requestController.abort(), REQUEST_TIMEOUT_MS);
           timeout = requestTimeout;
-          if (import.meta.env.DEV) console.debug('[AI] Sending frame');
+          if (import.meta.env.DEV) console.debug(`[AI] prediction request callId=${callId}`);
           void sendAiFrame(callId, blob, requestController.signal).then((prediction) => {
             if (disposed || captureGeneration !== generation) return;
             setUnavailable(false);
-            if (import.meta.env.DEV) console.debug(`[AI] Prediction received: ${prediction.letter} ${prediction.confidence.toFixed(2)}`);
+            if (prediction && import.meta.env.DEV) console.debug(`[AI] Accepted letter: ${prediction.letter} ${prediction.confidence.toFixed(2)}`);
           }).catch((error: unknown) => {
             if (disposed || captureGeneration !== generation) return;
             const status = (error as { status?: number })?.status;
