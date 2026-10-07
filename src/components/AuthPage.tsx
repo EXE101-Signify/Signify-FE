@@ -10,7 +10,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import type { Screen } from '../types';
 import AuthShell from './auth/AuthShell';
-import GoogleButton from './auth/GoogleButton';
 import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
 import { Button, Input } from './common';
 import { validatePassword } from '../utils/validation';

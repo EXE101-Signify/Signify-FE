@@ -1,4 +1,6 @@
 import {
+  useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -10,7 +12,7 @@ import {
   useNavigate,
 } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
-import { ArrowLeft, Home } from 'lucide-react';
+import { ArrowLeft, Home, LoaderCircle, Phone, PhoneOff } from 'lucide-react';
 
 import AuthPage from './components/AuthPage';
 import Dashboard from './components/Dashboard';
@@ -22,11 +24,31 @@ import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import VerifyOtpPage from './components/auth/VerifyOtpPage';
 import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
+import SettingsPage from './components/settings/SettingsPage';
+import NotificationsPage from './components/notifications/NotificationsPage';
 import { BrandLogo, Button } from './components/common';
 import { authApi } from './services/authApi';
-import { clearStoredSession } from './services/apiClient';
+import { clearStoredSession, getStoredAccessToken, getStoredUser } from './services/apiClient';
+import { videoCallApi, type VideoCallRecord } from './services/videoCallApi';
+import { conversationApi, type ConversationParticipant } from './services/conversationApi';
+import {
+  applyCallStatusEvent, callEventMatchesCall, canEnterVideoCall,
+  isTerminalCallStatus, parseCallEvent, type CallEvent,
+} from './services/callEvents';
+import { subscribeToStomp, type StompConnectionState } from './services/stompConnection';
 
-import type { Contact, Screen } from './types';
+import type { CallableContact, Contact, Screen } from './types';
+
+function callErrorMessage(error: unknown): string {
+  const status = (error as { status?: number })?.status;
+  switch (status) {
+    case 401: return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
+    case 403: return 'Bạn không có quyền gọi trong cuộc trò chuyện này.';
+    case 404: return 'Không tìm thấy cuộc gọi hoặc cuộc trò chuyện.';
+    case 409: return 'Trạng thái cuộc gọi đã thay đổi. Vui lòng thử lại.';
+    default: return error instanceof Error ? error.message : 'Không thể bắt đầu cuộc gọi.';
+  }
+}
 
 interface ProtectedRouteProps {
   isAuthenticated: boolean;
@@ -97,8 +119,136 @@ export default function App() {
     return localStorage.getItem('signbridge_auth') === 'true';
   });
 
-  const [activeCallContact, setActiveCallContact] =
-    useState<Contact | null>(null);
+  const [activeCall, setActiveCall] = useState<{ contact: CallableContact; call: VideoCallRecord } | null>(null);
+  const [callCreating, setCallCreating] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
+  const creatingCall = useRef(false);
+  const authGeneration = useRef(0);
+  const creatingConversationId = useRef<number | null>(null);
+  const creatingReceiverId = useRef<number | null>(null);
+  const activeCallRef = useRef<typeof activeCall>(null);
+  const [pendingCall, setPendingCall] = useState<CallEvent | null>(null);
+  const pendingCallRef = useRef<CallEvent | null>(null);
+  const [incomingCaller, setIncomingCaller] = useState<ConversationParticipant | null>(null);
+  const [incomingAction, setIncomingAction] = useState<'accept' | 'reject' | null>(null);
+  const incomingBusy = incomingAction !== null;
+  const [incomingError, setIncomingError] = useState<string | null>(null);
+  const [callNotice, setCallNotice] = useState<string | null>(null);
+  const [callSignalState, setCallSignalState] = useState<StompConnectionState>('offline');
+  const incomingActionRef = useRef<number | null>(null);
+  const seenEventIds = useRef(new Set<string>());
+  const settledCallIds = useRef(new Set<number>());
+  const statusDuringRequest = useRef(new Map<number, CallEvent>());
+  const currentUserId = getStoredUser()?.userId;
+
+  const setCurrentCall = (value: typeof activeCall) => {
+    activeCallRef.current = value;
+    setActiveCall(value);
+  };
+
+  const setIncomingCall = (value: CallEvent | null) => {
+    pendingCallRef.current = value;
+    setPendingCall(value);
+  };
+
+  const resetCallSession = () => {
+    creatingCall.current = false;
+    creatingConversationId.current = null;
+    creatingReceiverId.current = null;
+    setCallCreating(false);
+    setIncomingCall(null);
+    setIncomingCaller(null);
+    incomingActionRef.current = null;
+    setIncomingAction(null);
+    setIncomingError(null);
+    setCallNotice(null);
+    setCallError(null);
+    seenEventIds.current.clear();
+    settledCallIds.current.clear();
+    statusDuringRequest.current.clear();
+    setCallSignalState('offline');
+    setCurrentCall(null);
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || !getStoredAccessToken()) return;
+    const generation = authGeneration.current;
+    const sessionUserId = getStoredUser()?.userId;
+    if (!Number.isSafeInteger(sessionUserId) || sessionUserId <= 0) return;
+    const remember = (eventId: string) => {
+      if (seenEventIds.current.has(eventId)) return false;
+      if (seenEventIds.current.size >= 500) seenEventIds.current.clear();
+      seenEventIds.current.add(eventId);
+      return true;
+    };
+    const stopIncoming = subscribeToStomp('/user/queue/calls/incoming', (body) => {
+      if (generation !== authGeneration.current || getStoredUser()?.userId !== sessionUserId) return;
+      const event = parseCallEvent(body, 'INCOMING_CALL');
+      const userId = getStoredUser()?.userId;
+      if (!event || event.receiverId !== userId || event.callerId === userId) return;
+      if (!remember(event.eventId) || settledCallIds.current.has(event.callId)) return;
+      // Keep one incoming call for the MVP. The backend owns busy/timeout handling.
+      if (pendingCallRef.current || activeCallRef.current || creatingCall.current || incomingActionRef.current !== null) return;
+      setIncomingError(null);
+      setCallNotice(null);
+      setIncomingCall(event);
+    }, setCallSignalState);
+    const stopStatus = subscribeToStomp('/user/queue/calls/status', (body) => {
+      if (generation !== authGeneration.current || getStoredUser()?.userId !== sessionUserId) return;
+      const event = parseCallEvent(body, 'CALL_STATUS_CHANGED');
+      const userId = getStoredUser()?.userId;
+      if (!event || (event.callerId !== userId && event.receiverId !== userId)) return;
+      if (!remember(event.eventId)) return;
+      if (settledCallIds.current.has(event.callId) && !isTerminalCallStatus(event.status)) return;
+      const currentCall = activeCallRef.current;
+      const matchesActive = callEventMatchesCall(event, currentCall?.call);
+      const matchesPending = callEventMatchesCall(event, pendingCallRef.current);
+      const matchesCreating = creatingCall.current && creatingConversationId.current === event.conversationId
+        && event.callerId === userId && event.receiverId === creatingReceiverId.current;
+      if ((currentCall?.call.id === event.callId && !matchesActive)
+        || (pendingCallRef.current?.callId === event.callId && !matchesPending)) return;
+      // Remember settled calls even when their incoming notification arrives later.
+      if (isTerminalCallStatus(event.status) || event.status === 'ACCEPTED') {
+        if (settledCallIds.current.size >= 500) settledCallIds.current.clear();
+        settledCallIds.current.add(event.callId);
+      }
+      if (!matchesActive && !matchesPending && !matchesCreating) return;
+      if (matchesCreating
+        || incomingActionRef.current === event.callId) {
+        const previous = statusDuringRequest.current.get(event.callId);
+        if (!previous || isTerminalCallStatus(event.status) || event.timestamp >= previous.timestamp)
+          statusDuringRequest.current.set(event.callId, event);
+      }
+      if (matchesPending && (isTerminalCallStatus(event.status)
+        || (event.status === 'ACCEPTED' && incomingActionRef.current !== event.callId))) {
+        setIncomingCall(null);
+        setIncomingError(null);
+      }
+      if (matchesActive) {
+        setCurrentCall({ ...currentCall, call: applyCallStatusEvent(currentCall.call, event) });
+      }
+    });
+    return () => { stopIncoming(); stopStatus(); };
+  }, [isAuthenticated, sessionGeneration]);
+
+  useEffect(() => {
+    setIncomingCaller(null);
+    if (!isAuthenticated || !pendingCall || pendingCall.receiverId !== currentUserId) return;
+    let active = true;
+    const generation = authGeneration.current;
+    void conversationApi.participants(pendingCall.conversationId).then((participants) => {
+      if (active && generation === authGeneration.current)
+        setIncomingCaller(participants.find((participant) => participant.userId === pendingCall.callerId) ?? null);
+    }).catch(() => { /* Caller ID remains visible when profile information is unavailable. */ });
+    return () => { active = false; };
+  }, [pendingCall, isAuthenticated, sessionGeneration, currentUserId]);
+
+  useEffect(() => {
+    if (!activeCall || !isTerminalCallStatus(activeCall.call.status)) return;
+    setCurrentCall(null);
+    if (location.pathname === '/call') navigate('/dashboard', { state: { toastMessage: 'Cuộc gọi đã kết thúc.' } });
+  }, [activeCall?.call.status, location.pathname, navigate]);
 
   const screenToPath: Record<Screen, string> = {
     landing: '/login',
@@ -107,6 +257,8 @@ export default function App() {
     call: '/call',
     languages: '/languages',
     profile: '/profile',
+    settings: '/settings',
+    notifications: '/notifications',
     'admin-users': '/admin/users',
   };
 
@@ -118,26 +270,121 @@ export default function App() {
   };
 
   const handleLoginSuccess = () => {
+    authGeneration.current += 1;
+    resetCallSession();
+    setSessionGeneration((current) => current + 1);
     localStorage.setItem('signbridge_auth', 'true');
     setIsAuthenticated(true);
     navigate('/dashboard');
   };
 
   const handleLogout = () => {
+    authGeneration.current += 1;
+    resetCallSession();
+    setSessionGeneration((current) => current + 1);
     authApi.logout().catch(() => clearStoredSession());
     setIsAuthenticated(false);
-    setActiveCallContact(null);
     navigate('/login', { replace: true });
   };
 
-  const handleStartCall = (contact: Contact) => {
-    setActiveCallContact(contact);
-    navigate('/call');
+  const handleStartCall = async (contact: CallableContact) => {
+    if (creatingCall.current || activeCallRef.current || pendingCallRef.current) return;
+    if (!Number.isSafeInteger(contact.userId) || contact.userId <= 0
+      || !Number.isSafeInteger(contact.conversationId) || contact.conversationId <= 0) {
+      setCallError('Không thể gọi: thiếu mã người dùng hoặc cuộc trò chuyện hợp lệ.');
+      return;
+    }
+    const generation = authGeneration.current;
+    creatingCall.current = true;
+    creatingConversationId.current = contact.conversationId;
+    creatingReceiverId.current = contact.userId;
+    setCallCreating(true);
+    setCallError(null);
+    try {
+      const call = await videoCallApi.create(contact.conversationId);
+      if (generation !== authGeneration.current) return;
+      if (call.conversationId !== contact.conversationId
+        || call.callerId !== getStoredUser()?.userId || call.receiverId !== contact.userId) {
+        throw new Error('Máy chủ trả về cuộc gọi không khớp cuộc trò chuyện.');
+      }
+      const latest = statusDuringRequest.current.get(call.id);
+      statusDuringRequest.current.delete(call.id);
+      const resolved = applyCallStatusEvent(call, latest);
+      if (isTerminalCallStatus(resolved.status)) {
+        setCallError('Cuộc gọi đã kết thúc trước khi kết nối.');
+      } else {
+        setCurrentCall({ contact, call: resolved });
+        navigate('/call');
+      }
+    } catch (error) {
+      if (generation !== authGeneration.current) return;
+      setCallError(callErrorMessage(error));
+    } finally {
+      if (generation === authGeneration.current) {
+        creatingCall.current = false;
+        creatingConversationId.current = null;
+        creatingReceiverId.current = null;
+        setCallCreating(false);
+      }
+    }
   };
 
   const handleEndCall = () => {
-    setActiveCallContact(null);
+    setCurrentCall(null);
     navigate('/dashboard');
+  };
+
+  const handleCallUpdated = (call: VideoCallRecord) => {
+    const current = activeCallRef.current;
+    if (current?.call.id === call.id) setCurrentCall({ ...current, call });
+  };
+
+  const handleIncomingAction = async (event: CallEvent, action: 'accept' | 'reject') => {
+    const receiverId = getStoredUser()?.userId;
+    if (!isAuthenticated || !getStoredAccessToken() || receiverId !== event.receiverId
+      || incomingActionRef.current !== null || !callEventMatchesCall(event, pendingCallRef.current)) return;
+    const generation = authGeneration.current;
+    incomingActionRef.current = event.callId;
+    setIncomingAction(action);
+    setIncomingError(null);
+    setCallNotice(null);
+    try {
+      const result = await videoCallApi[action](event.callId);
+      if (generation !== authGeneration.current || getStoredUser()?.userId !== receiverId) return;
+      if (!callEventMatchesCall(event, result)
+        || result.status !== (action === 'accept' ? 'ACCEPTED' : 'REJECTED')) {
+        throw new Error('Máy chủ trả về trạng thái cuộc gọi không hợp lệ.');
+      }
+      if (callEventMatchesCall(event, pendingCallRef.current)) setIncomingCall(null);
+      settledCallIds.current.add(result.id);
+      const latest = statusDuringRequest.current.get(event.callId);
+      statusDuringRequest.current.delete(event.callId);
+      if (action === 'accept') {
+        const accepted = applyCallStatusEvent(result, latest);
+        if (isTerminalCallStatus(accepted.status)) {
+          setIncomingError('Cuộc gọi đã kết thúc.');
+        } else {
+          const contact: CallableContact = {
+            id: String(event.callerId), userId: event.callerId, conversationId: result.conversationId,
+            name: incomingCaller?.fullName || `Người gọi #${event.callerId}`, role: 'Cuộc gọi video',
+            status: 'offline', avatar: incomingCaller?.avatar || '', lastCall: '—',
+          };
+          setCurrentCall({ contact, call: accepted });
+          navigate('/call');
+        }
+      } else {
+        setCallNotice(`Đã từ chối cuộc gọi #${result.id}.`);
+      }
+    } catch (error) {
+      if (generation !== authGeneration.current || getStoredUser()?.userId !== receiverId) return;
+      const message = action === 'accept' ? 'Không thể chấp nhận cuộc gọi.' : 'Không thể từ chối cuộc gọi.';
+      setIncomingError(`${message} ${callErrorMessage(error)}`);
+    } finally {
+      if (generation === authGeneration.current) {
+        incomingActionRef.current = null;
+        setIncomingAction(null);
+      }
+    }
   };
 
   return (
@@ -187,7 +434,7 @@ export default function App() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.2 }}
               >
-                <RegisterPage />
+                <RegisterPage onLoginSuccess={handleLoginSuccess} />
               </motion.div>
             }
           />
@@ -250,6 +497,8 @@ export default function App() {
                     onNavigate={handleNavigate}
                     onLogout={handleLogout}
                     onStartCall={handleStartCall}
+                    callCreating={callCreating}
+                    callError={callError}
                   />
                 </motion.div>
               </ProtectedRoute>
@@ -291,12 +540,44 @@ export default function App() {
           />
 
           <Route
+            path="/settings"
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <SettingsPage onNavigate={handleNavigate} />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <NotificationsPage onNavigate={handleNavigate} />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/call"
             element={
               <ProtectedRoute
                 isAuthenticated={isAuthenticated}
               >
-                {activeCallContact ? (
+                {activeCall && canEnterVideoCall(activeCall.call, currentUserId) ? (
                   <motion.div
                     initial={{
                       opacity: 0,
@@ -313,7 +594,11 @@ export default function App() {
                     transition={{ duration: 0.25 }}
                   >
                     <VideoCall
-                      contact={activeCallContact}
+                      contact={activeCall.contact}
+                      callId={activeCall.call.id}
+                      call={activeCall.call}
+                      role={getStoredUser()?.userId === activeCall.call.receiverId ? 'SIGNER' : 'VIEWER'}
+                      onCallUpdated={handleCallUpdated}
                       onEndCall={handleEndCall}
                     />
                   </motion.div>
@@ -354,6 +639,28 @@ export default function App() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </AnimatePresence>
+      {isAuthenticated && incomingError && !pendingCall && (
+        <div role="alert" className="fixed bottom-4 right-4 z-50 rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800 shadow-xl">{incomingError}</div>
+      )}
+      {callNotice && <div role="status" className="fixed right-4 bottom-4 z-40 flex items-center gap-3 rounded-xl border border-brand-border bg-white p-3 text-xs font-bold text-brand-text shadow-md">{callNotice}<button type="button" onClick={() => setCallNotice(null)} aria-label="Đóng thông báo">×</button></div>}
+      {isAuthenticated && getStoredAccessToken() && pendingCall && pendingCall.receiverId === currentUserId && (
+        <div id="incoming-call-notifications" className="fixed bottom-4 right-4 z-[100] flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-sm flex-col gap-3 overflow-y-auto">
+          {[pendingCall].map((event) => (
+            <div key={event.callId} className="rounded-2xl bg-white p-5 text-brand-text shadow-xl" role="alertdialog" aria-label="Cuộc gọi video đến">
+              <h2 className="flex items-center gap-2 text-base font-extrabold"><Phone className="h-5 w-5 text-brand-primary" aria-hidden="true" />Cuộc gọi video đến</h2>
+              <p className="mt-2 text-xs">{incomingCaller?.fullName || `Người gọi #${event.callerId}`} · Cuộc gọi #{event.callId}</p>
+              {incomingError && <p role="alert" className="mt-2 text-xs text-brand-error">{incomingError}</p>}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="button" disabled={incomingBusy} onClick={() => handleIncomingAction(event, 'accept')} aria-busy={incomingBusy && incomingActionRef.current === event.callId} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-primary px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-wait disabled:opacity-50">
+                  {incomingAction === 'accept' ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Phone className="h-4 w-4" aria-hidden="true" />}
+                  {incomingAction === 'accept' ? 'Đang chấp nhận…' : 'Chấp nhận cuộc gọi'}
+                </button>
+                <button type="button" disabled={incomingBusy} onClick={() => handleIncomingAction(event, 'reject')} aria-busy={incomingAction === 'reject'} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand-error px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-error/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-error disabled:cursor-wait disabled:opacity-50">{incomingAction === 'reject' ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <PhoneOff className="h-4 w-4" aria-hidden="true" />}{incomingAction === 'reject' ? 'Đang từ chối…' : 'Từ chối'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
