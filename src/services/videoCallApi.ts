@@ -19,10 +19,12 @@ export interface VideoCallRecord {
   createdAt: number;
 }
 
-async function requireCall(response: { data?: VideoCallRecord }): Promise<VideoCallRecord> {
+async function requireCall(response: { success: boolean; data?: VideoCallRecord }): Promise<VideoCallRecord> {
   const call = response.data;
-  if (!call || !Number.isSafeInteger(call.id) || call.id <= 0) {
-    throw new Error('Máy chủ không trả về mã cuộc gọi hợp lệ.');
+  if (response.success !== true || !call
+    || [call.id, call.conversationId, call.callerId, call.receiverId].some((id) => !Number.isSafeInteger(id) || id <= 0)
+    || !['CALLING', 'ACCEPTED', 'COMPLETED', 'REJECTED', 'MISSED', 'BUSY'].includes(call.status)) {
+    throw new Error('Máy chủ không trả về cuộc gọi hợp lệ.');
   }
   return call;
 }

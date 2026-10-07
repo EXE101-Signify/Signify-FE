@@ -89,7 +89,6 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const [textActionBusy, setTextActionBusy] = useState(false);
   const [textActionError, setTextActionError] = useState<string | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
-  const isReceiver = getStoredUser()?.userId === call.receiverId;
   const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
   // MVP call roles: the receiver signs and the caller views. Only the signer's local camera is sent to AI.
@@ -159,15 +158,15 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
     }
   };
 
-  const performCallAction = async (action: 'accept' | 'reject' | 'end') => {
+  const performCallAction = async () => {
     if (callActionBusy) return;
     setCallActionBusy(true);
     setCallActionError(null);
     try {
-      const updated = await videoCallApi[action](callId);
+      const updated = await videoCallApi.end(callId);
       if (updated.id !== callId) throw new Error('Máy chủ trả về mã cuộc gọi không khớp.');
       onCallUpdated(updated);
-      if (action !== 'accept') onEndCall();
+      onEndCall();
     } catch (error) {
       const status = (error as { status?: number })?.status;
       const message = status === 401 ? 'Phiên đăng nhập đã hết hạn.'
@@ -252,7 +251,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       <div id="video-stage" className="flex-1 flex flex-col justify-between p-6 relative">
         
         {/* Floating Connection Status info */}
-        <div id="call-status-bar" className="flex items-center justify-between z-10 bg-neutral-900/60 backdrop-blur-md p-3.5 rounded-2xl border border-white/5">
+        <div id="call-status-bar" className="flex shrink-0 flex-wrap items-center justify-between gap-3 z-10 bg-neutral-900/60 backdrop-blur-md p-3.5 rounded-2xl border border-white/5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-brand-primary shadow-lg">
               {contact.avatar ? <img
@@ -337,7 +336,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
         </div>
 
         {/* Action Controls Toolbar */}
-        <div id="call-control-toolbar" className="flex items-center justify-between bg-neutral-950/80 border border-white/5 p-4 rounded-3xl z-10 gap-3">
+        <div id="call-control-toolbar" className="flex shrink-0 flex-wrap items-center justify-between bg-neutral-950/80 border border-white/5 p-4 rounded-3xl z-10 gap-3">
           
           <div className="flex items-center gap-2">
             {/* Mic button */}
@@ -390,18 +389,14 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
 
           {/* End Call Button */}
           {callActionError && <span role="alert" className="text-xs text-red-300">{callActionError}</span>}
-          {call.status === 'CALLING' && isReceiver && <div className="flex gap-2">
-            <button type="button" disabled={callActionBusy} onClick={() => performCallAction('accept')} className="rounded-xl bg-brand-secondary px-4 py-2 text-xs font-bold text-white">Chấp nhận</button>
-            <button type="button" disabled={callActionBusy} onClick={() => performCallAction('reject')} className="rounded-xl bg-brand-error px-4 py-2 text-xs font-bold text-white">Từ chối</button>
-          </div>}
           <button 
             id="call-end-phone-btn"
             disabled={callActionBusy}
-            onClick={() => call.status === 'ACCEPTED' ? performCallAction('end') : onEndCall()}
+            onClick={() => performCallAction()}
             className="px-6 py-3.5 bg-brand-error hover:bg-brand-error/95 text-white rounded-2xl text-xs font-black tracking-wider flex items-center gap-2 transition-all cursor-pointer shadow-lg shadow-brand-error/10"
           >
             <PhoneOff className="w-4.5 h-4.5" />
-            {call.status === 'ACCEPTED' ? 'GÁC MÁY' : 'ĐÓNG MÀN HÌNH'}
+            {call.status === 'ACCEPTED' ? 'GÁC MÁY' : 'HỦY CUỘC GỌI'}
           </button>
         </div>
 
