@@ -26,6 +26,7 @@ import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
 import SettingsPage from './components/settings/SettingsPage';
 import NotificationsPage from './components/notifications/NotificationsPage';
+import FriendListPage from './components/friends/FriendListPage';
 import { BrandLogo, Button } from './components/common';
 import { authApi } from './services/authApi';
 import { clearStoredSession, getStoredAccessToken, getStoredUser } from './services/apiClient';
@@ -260,6 +261,7 @@ export default function App() {
     settings: '/settings',
     notifications: '/notifications',
     'admin-users': '/admin/users',
+    friends: '/friends',
   };
 
   const handleNavigate = (screen: Screen) => {
@@ -566,6 +568,25 @@ export default function App() {
                   transition={{ duration: 0.2 }}
                 >
                   <NotificationsPage onNavigate={handleNavigate} />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/friends"
+            element={
+              <ProtectedRoute isAuthenticated={isAuthenticated}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <FriendListPage
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                  />
                 </motion.div>
               </ProtectedRoute>
             }

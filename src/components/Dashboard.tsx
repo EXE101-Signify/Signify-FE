@@ -15,6 +15,7 @@ import { userBlockApi } from '../services/userBlockApi';
 import ConversationList from './chat/ConversationList';
 import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
+import AddFriendModal from './friends/AddFriendModal';
 import type {
   ChatAttachmentItem,
   ChatConversationItem,
@@ -181,6 +182,7 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<number>>(new Set());
+  const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
   const activeIdRef = useRef(activeId);
   const seenEventIds = useRef(new Set<string>());
 
@@ -597,6 +599,8 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
         onSelect={selectConversation}
         onOpenSettings={() => onNavigate('settings')}
         onOpenNotifications={() => onNavigate('notifications')}
+        onAddFriend={() => setIsAddFriendModalOpen(true)}
+        onOpenContacts={() => onNavigate('friends')}
       />
       {activeConversation ? (
         <>
@@ -648,6 +652,12 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
           <button type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo" className="ml-2 text-[#87958f]"><X className="h-4 w-4" /></button>
         </div>
       )}
+
+      <AddFriendModal
+        isOpen={isAddFriendModalOpen}
+        onClose={() => setIsAddFriendModalOpen(false)}
+        onFriendAdded={() => showNotice('Đã gửi lời mời kết bạn thành công.')}
+      />
     </main>
   );
 }

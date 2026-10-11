@@ -11,7 +11,8 @@ export type Screen =
   | 'profile'
   | 'settings'
   | 'notifications'
-  | 'admin-users';
+  | 'admin-users'
+  | 'friends';
 
 export interface UserProfile {
   id: string;

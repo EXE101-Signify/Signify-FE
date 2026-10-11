@@ -16,7 +16,7 @@ import { BrandLogo, PageHeader } from '../components/common';
 
 import { getStoredUser } from '../services/apiClient';
 
-type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'settings' | 'admin-users'>;
+type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'settings' | 'admin-users' | 'friends'>;
 
 interface AppLayoutProps {
   activeScreen?: AppScreen;
@@ -63,6 +63,7 @@ export default function AppLayout({
     if (screen === 'profile') return location.pathname === '/profile';
     if (screen === 'settings') return location.pathname === '/settings';
     if (screen === 'admin-users') return location.pathname === '/admin/users';
+    if (screen === 'friends') return location.pathname === '/friends';
     return false;
   };
 
@@ -148,8 +149,8 @@ export default function AppLayout({
 
             <button
               type="button"
-              className={getNavItemClass(false)}
-              onClick={onContactsClick || (() => handleNav('dashboard', '/dashboard'))}
+              className={getNavItemClass(isCurrentScreen('friends'))}
+              onClick={onContactsClick || (() => handleNav('friends', '/friends'))}
             >
               <Users
                 className="h-4 w-4"
