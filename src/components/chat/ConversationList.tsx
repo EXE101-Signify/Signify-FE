@@ -23,11 +23,6 @@ export default function ConversationList({ conversations, activeId, searchQuery,
             <img src="/signify-logo-transparent.png" alt="Signify" className="h-9 w-auto object-contain object-left" />
             <h1 className="mt-1 text-[27px] font-extrabold tracking-[-0.035em] text-[#21322e]">Tin nhắn</h1>
           </div>
-          <div className="relative flex items-center gap-2">
-            <button type="button" onClick={onOpenNotifications} title="Mở thông báo" aria-label="Mở thông báo" className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/65 text-[#4d736a] shadow-[0_10px_24px_rgba(67,99,90,0.1)] transition hover:-translate-y-0.5 hover:bg-white"><Bell className="h-5 w-5" /><span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#edf0f3] bg-[#c5745b] px-1 text-[9px] font-extrabold text-white">3</span></button>
-            <button type="button" onClick={onOpenSettings} title="Mở cài đặt" aria-label="Mở cài đặt" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/75 bg-white/65 text-[#4d736a] shadow-[0_10px_24px_rgba(67,99,90,0.1)] transition hover:-translate-y-0.5 hover:bg-white"><Settings className="h-5 w-5" /></button>
-            <button type="button" title="Tạo hội thoại (chờ API tìm kiếm người dùng)" aria-label="Tạo hội thoại" className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#f2d8cf] text-[#9a5f4d] shadow-[0_10px_24px_rgba(176,105,82,0.12)] transition hover:-translate-y-0.5 hover:bg-[#efcfc3]"><MessageSquarePlus className="h-5 w-5" /></button>
-          </div>
         </div>
 
         <div className="relative mt-5">

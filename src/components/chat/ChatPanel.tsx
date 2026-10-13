@@ -253,11 +253,6 @@ export default function ChatPanel({
         </div>
       </header>
 
-      <div className="flex items-center justify-between gap-3 border-b border-[#d9cfdf] bg-[#eae2f0] px-6 py-2.5 shadow-inner">
-        <span className="flex items-center gap-2 text-[11px] font-bold text-[#705f77]"><span className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/80 text-[#b36f5b]"><Sparkles className="h-3.5 w-3.5" /></span>Trợ lý phiên dịch Signify đang sẵn sàng</span>
-        <span className="hidden rounded-full bg-[#fff8f4] px-3 py-1 text-[10px] font-bold text-[#936553] ring-1 ring-[#efd9d0] lg:inline">Ký hiệu ↔ Văn bản</span>
-      </div>
-
       <div className="signify-chat-pattern relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-7">
         <span className="pointer-events-none absolute -left-20 top-12 h-64 w-64 rounded-full bg-[#d9ebe5]/45 blur-2xl" />
         <span className="pointer-events-none absolute -right-20 bottom-10 h-72 w-72 rounded-full bg-[#ead7e5]/35 blur-2xl" />
