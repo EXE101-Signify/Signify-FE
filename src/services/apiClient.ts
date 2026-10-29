@@ -3,7 +3,23 @@
  * Supports JSON and multipart requests, Bearer token injection, and error handling.
  */
 
-export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080';
+const configuredApiBaseUrl = import.meta.env?.VITE_API_BASE_URL?.trim();
+if (!configuredApiBaseUrl && import.meta.env?.PROD) {
+  throw new Error('VITE_API_BASE_URL is required for a production build.');
+}
+
+const apiOrigin = configuredApiBaseUrl || 'http://localhost:8080';
+const parsedApiOrigin = new URL(apiOrigin);
+if (!['http:', 'https:'].includes(parsedApiOrigin.protocol) || parsedApiOrigin.search || parsedApiOrigin.hash
+  || !['', '/', '/api', '/api/'].includes(parsedApiOrigin.pathname)) {
+  throw new Error('VITE_API_BASE_URL must be an HTTP(S) origin, optionally ending in /api.');
+}
+export const API_BASE_URL = parsedApiOrigin.origin;
+
+export function apiUrl(endpoint: string): string {
+  if (/^https?:\/\//i.test(endpoint)) return endpoint;
+  return `${API_BASE_URL}/${endpoint.replace(/^\/+/, '')}`;
+}
 
 export interface ApiResponse<T = any> {
   success: boolean;
@@ -49,6 +65,16 @@ export const TOKEN_KEYS = {
   AUTH: 'signbridge_auth',
 };
 
+export const AUTH_SESSION_EXPIRED_EVENT = 'signbridge:session-expired';
+let refreshRequest: Promise<boolean> | null = null;
+
+function invalidateStoredSession(): void {
+  clearStoredSession();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_SESSION_EXPIRED_EVENT));
+  }
+}
+
 export function getStoredAccessToken(): string | null {
   return localStorage.getItem(TOKEN_KEYS.ACCESS_TOKEN);
 }
@@ -62,6 +88,10 @@ export function setStoredSession(tokens: TokenDTO, user: UserDTO): void {
   localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, tokens.refreshToken);
   localStorage.setItem(TOKEN_KEYS.USER, JSON.stringify(user));
   localStorage.setItem(TOKEN_KEYS.AUTH, 'true');
+}
+
+export function setStoredUser(user: UserDTO): void {
+  localStorage.setItem(TOKEN_KEYS.USER, JSON.stringify(user));
 }
 
 export function clearStoredSession(): void {
@@ -111,7 +141,7 @@ export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const url = apiUrl(endpoint);
   const headers = new Headers(options.headers || {});
 
   const isPublicEndpoint =
@@ -140,17 +170,24 @@ export async function apiFetch<T = any>(
       const refreshed = await refreshTokens();
       if (refreshed) {
         // Retry with new access token
-        const newHeaders = new Headers(options.headers || {});
-        newHeaders.set('Authorization', `Bearer ${getStoredAccessToken()}`);
+        const newHeaders = new Headers(headers);
+        newHeaders.set(
+          'Authorization',
+          `Bearer ${getStoredAccessToken()}`
+        );
         const retryResponse = await fetch(url, {
           ...options,
           headers: newHeaders,
         });
+        if (retryResponse.status === 401 && !isPublicEndpoint) invalidateStoredSession();
         return handleResponse<T>(retryResponse);
       } else {
-        clearStoredSession();
+        if (!isPublicEndpoint) invalidateStoredSession();
+        return handleResponse<T>(response);
       }
     }
+
+    if (response.status === 401 && !isPublicEndpoint) invalidateStoredSession();
 
     return handleResponse<T>(response);
   } catch (err: any) {
@@ -161,12 +198,19 @@ export async function apiFetch<T = any>(
   }
 }
 
-export async function refreshTokens(): Promise<boolean> {
+export function refreshTokens(): Promise<boolean> {
+  if (!refreshRequest) {
+    refreshRequest = performTokenRefresh().finally(() => { refreshRequest = null; });
+  }
+  return refreshRequest;
+}
+
+async function performTokenRefresh(): Promise<boolean> {
   const refreshToken = getStoredRefreshToken();
   if (!refreshToken) return false;
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+    const response = await fetch(apiUrl('/api/auth/refresh'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -181,6 +225,8 @@ export async function refreshTokens(): Promise<boolean> {
     if (resJson.success && resJson.data) {
       // Refresh responses put the token fields directly inside `data`
       const newTokens: TokenDTO = resJson.data.tokens || resJson.data;
+      if (typeof newTokens.accessToken !== 'string' || !newTokens.accessToken
+        || typeof newTokens.refreshToken !== 'string' || !newTokens.refreshToken) return false;
       localStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, newTokens.accessToken);
       localStorage.setItem(TOKEN_KEYS.REFRESH_TOKEN, newTokens.refreshToken);
       return true;

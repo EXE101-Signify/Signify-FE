@@ -1,0 +1,129 @@
+name: Build and deploy signify-fe
+
+'on':
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signify-fe-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: signify-fe
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Type-check
+        run: npm run lint
+      - name: Unit tests
+        run: node --import tsx --test tests/*.test.ts
+      - name: Build application
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+
+  publish_and_deploy:
+    needs: ci
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Validate deployment configuration
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_REGISTRY: ${{ secrets.DOCKERHUB_REGISTRY }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        shell: bash
+        run: |
+          for name in DOCKERHUB_USERNAME DOCKERHUB_REGISTRY DOCKERHUB_TOKEN DOKPLOY_URL DOKPLOY_API_KEY DOKPLOY_APPLICATION_ID VITE_API_BASE_URL; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing deployment setting: ${name}"
+              exit 1
+            fi
+          done
+          if [ "$DOCKERHUB_REGISTRY" != docker.io ] || [ "$DOCKERHUB_USERNAME" != ghuy1506 ]; then
+            echo '::error::Docker Hub settings must target docker.io/ghuy1506.'
+            exit 1
+          fi
+          if [ "$VITE_API_BASE_URL" != https://api.hood.io.vn ]; then
+            echo '::error::VITE_API_BASE_URL must target the production backend.'
+            exit 1
+          fi
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ secrets.DOCKERHUB_REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push Linux amd64 image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPOSITORY }}:latest
+            ${{ secrets.DOCKERHUB_REGISTRY }}/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.VITE_API_BASE_URL }}
+          cache-from: type=gha,scope=signify-fe
+          cache-to: type=gha,scope=signify-fe,mode=max
+      - name: Deploy exact image in Dokploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_REGISTRY: ${{ secrets.DOCKERHUB_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')"
+          if [ "$head_sha" != "$GITHUB_SHA" ]; then
+            echo '::notice::A newer main commit exists; skipping deployment.'
+            exit 0
+          fi
+          base_url="${DOKPLOY_URL%/}"
+          if [[ ! "$base_url" =~ ^https://[^/]+$ ]]; then
+            echo '::error::DOKPLOY_URL must be an HTTPS origin.'
+            exit 1
+          fi
+          image="${DOCKERHUB_REGISTRY}/${DOCKERHUB_USERNAME}/${IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          update_body="$(jq -nc --arg applicationId "$DOKPLOY_APPLICATION_ID" --arg dockerImage "$image" '{applicationId:$applicationId,dockerImage:$dockerImage}')"
+          deploy_body="$(jq -nc --arg applicationId "$DOKPLOY_APPLICATION_ID" --arg title "GitHub ${GITHUB_SHA}" '{applicationId:$applicationId,title:$title}')"
+          curl --fail --silent --show-error --request POST "${base_url}/api/application.update" \
+            --header "x-api-key: ${DOKPLOY_API_KEY}" --header 'Content-Type: application/json' \
+            --data "$update_body" > /dev/null
+          curl --fail --silent --show-error --request POST "${base_url}/api/application.deploy" \
+            --header "x-api-key: ${DOKPLOY_API_KEY}" --header 'Content-Type: application/json' \
+            --data "$deploy_body" > /dev/null
+          echo "Dokploy deployment requested for ${image}"

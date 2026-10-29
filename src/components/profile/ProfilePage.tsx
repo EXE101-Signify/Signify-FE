@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { Screen } from '../../types';
 import { authApi } from '../../services/authApi';
-import { getStoredUser, type UserDTO } from '../../services/apiClient';
+import { getStoredUser, setStoredUser, type UserDTO } from '../../services/apiClient';
 import { validateEmail } from '../../utils/validation';
 
 interface ProfilePageProps {
@@ -31,7 +31,7 @@ interface ProfilePageProps {
 interface ProfileView {
   id: string;
   username: string;
-  role: 'USER' | 'ADMIN';
+  role: 'USER' | 'ADMIN' | '';
   firstName: string;
   lastName: string;
   email: string;
@@ -39,28 +39,17 @@ interface ProfileView {
   gender: boolean | null;
   address: string;
   avatar: string;
-  emailVerified: boolean;
+  emailVerified: boolean | null;
 }
 
-const FALLBACK_AVATAR = 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=300';
-
-const FALLBACK_PROFILE: ProfileView = {
-  id: 'local-user',
-  username: 'signify.user',
-  role: 'USER',
-  firstName: 'Người dùng',
-  lastName: 'Signify',
-  email: 'user@signify.vn',
-  phone: '',
-  gender: null,
-  address: '',
-  avatar: FALLBACK_AVATAR,
-  emailVerified: false,
+const EMPTY_PROFILE: ProfileView = {
+  id: '', username: '', role: '', firstName: '', lastName: '', email: '', phone: '',
+  gender: null, address: '', avatar: '', emailVerified: null,
 };
 
-function fromUserDto(user: UserDTO, current: ProfileView): ProfileView {
+function fromUserDto(user: UserDTO): ProfileView {
   return {
-    ...current,
+    ...EMPTY_PROFILE,
     id: String(user.userId),
     username: user.username,
     role: user.role,
@@ -70,19 +59,19 @@ function fromUserDto(user: UserDTO, current: ProfileView): ProfileView {
     phone: user.phone ?? '',
     gender: user.gender === 'true' ? true : user.gender === 'false' ? false : null,
     address: user.address ?? '',
-    avatar: user.avatar || current.avatar,
+    avatar: user.avatar ?? '',
     emailVerified: user.emailVerified,
   };
 }
 
 function fullName(profile: ProfileView) {
-  return [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profile.username;
+  return [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profile.username || 'No data';
 }
 
 function genderLabel(value: boolean | null) {
   if (value === true) return 'Nam';
   if (value === false) return 'Nữ';
-  return 'Chưa cập nhật';
+  return 'No data';
 }
 
 const InfoCard = ({ icon, label, value, tone = 'mint' }: {
@@ -96,18 +85,14 @@ const InfoCard = ({ icon, label, value, tone = 'mint' }: {
     lavender: 'border-[#d1c6dc] bg-[#f2edf5] text-[#776483]',
     peach: 'border-[#e4c2b7] bg-[#faece7] text-[#a76550]',
   };
-  return <div className={`rounded-[20px] border-2 p-4 ${tones[tone]}`}><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/80 shadow-sm">{icon}</span><div className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">{label}</span><strong className="mt-1 block truncate text-sm font-bold text-[#263934]">{value || 'Chưa cập nhật'}</strong></div></div></div>;
+  return <div className={`rounded-[20px] border-2 p-4 ${tones[tone]}`}><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/80 shadow-sm">{icon}</span><div className="min-w-0"><span className="block text-[10px] font-bold uppercase tracking-[0.12em] opacity-75">{label}</span><strong className="mt-1 block truncate text-sm font-bold text-[#263934]">{value || 'No data'}</strong></div></div></div>;
 };
 
 export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) {
   const [editing, setEditing] = useState(false);
   const [profile, setProfile] = useState<ProfileView>(() => {
     const stored = getStoredUser();
-    const saved = localStorage.getItem('signify.profile.preview');
-    if (saved) {
-      try { return JSON.parse(saved) as ProfileView; } catch { /* use stored/fallback */ }
-    }
-    return stored ? fromUserDto(stored, FALLBACK_PROFILE) : FALLBACK_PROFILE;
+    return stored ? fromUserDto(stored) : EMPTY_PROFILE;
   });
   const [draft, setDraft] = useState(profile);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,7 +103,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
     authApi.getProfile().then((response) => {
       if (!response.success || !response.data) return;
       setProfile((current) => {
-        const updated = fromUserDto(response.data!, current);
+        const updated = fromUserDto(response.data!);
         setDraft(updated);
         return updated;
       });
@@ -136,7 +121,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
     setEditing(true);
   };
 
-  const saveProfile = (event: FormEvent) => {
+  const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
     const emailError = draft.email ? validateEmail(draft.email) : null;
@@ -145,25 +130,22 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
     if (draft.phone.length > 20) { setError('Số điện thoại không được vượt quá 20 ký tự.'); return; }
     if (draft.address.length > 500) { setError('Địa chỉ không được vượt quá 500 ký tự.'); return; }
     setSaving(true);
-    window.setTimeout(() => {
-      const emailChanged = draft.email.trim() !== profile.email;
-      const updated = {
-        ...draft,
-        firstName: draft.firstName.trim(),
-        lastName: draft.lastName.trim(),
-        email: draft.email.trim(),
-        phone: draft.phone.trim(),
+    try {
+      const response = await authApi.updateProfile({
+        email: draft.email.trim(), firstName: draft.firstName.trim(), lastName: draft.lastName.trim(),
+        avatar: draft.avatar.trim(), phone: draft.phone.trim(), gender: draft.gender,
         address: draft.address.trim(),
-        avatar: draft.avatar.trim() || FALLBACK_AVATAR,
-        emailVerified: emailChanged ? false : profile.emailVerified,
-      };
+      });
+      if (!response.data) throw new Error(response.message || 'Không nhận được hồ sơ đã cập nhật.');
+      const updated = fromUserDto(response.data);
+      setStoredUser(response.data);
       setProfile(updated);
       setDraft(updated);
-      localStorage.setItem('signify.profile.preview', JSON.stringify(updated));
-      setSaving(false);
       setEditing(false);
-      showNotice('Đã lưu hồ sơ trên bản xem trước.');
-    }, 450);
+      showNotice('Đã lưu hồ sơ.');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Không thể lưu hồ sơ.');
+    } finally { setSaving(false); }
   };
 
   return (
@@ -177,7 +159,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
 
       <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
         <section className="overflow-hidden rounded-[30px] border-2 border-[#b6cfc7] bg-white/90 shadow-[0_22px_60px_rgba(55,83,74,0.14)]">
-          <div className="relative overflow-hidden bg-gradient-to-r from-[#d4eae2] via-[#e8e0ef] to-[#f5d9d0] px-7 py-7"><span className="pointer-events-none absolute -right-8 -top-16 h-44 w-44 rounded-full border-[34px] border-white/20" /><div className="relative flex flex-wrap items-center justify-between gap-6"><div className="flex items-center gap-5"><img src={editing ? draft.avatar || FALLBACK_AVATAR : profile.avatar} alt={fullName(profile)} className="h-24 w-24 rounded-[26px] border-4 border-white object-cover shadow-[0_14px_35px_rgba(55,75,68,0.2)]" referrerPolicy="no-referrer" /><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold tracking-[-0.02em]">{fullName(profile)}</h2>{profile.emailVerified && <BadgeCheck className="h-5 w-5 text-[#3f7c72]" />}</div><p className="mt-1 text-sm font-medium text-[#60756e]">@{profile.username}</p><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-[#90b8ac] bg-white/70 px-3 py-1 text-[10px] font-bold text-[#356b61]">{profile.role}</span><span className={`rounded-full border bg-white/70 px-3 py-1 text-[10px] font-bold ${profile.emailVerified ? 'border-[#90b8ac] text-[#356b61]' : 'border-[#dfb6aa] text-[#9b5a46]'}`}>{profile.emailVerified ? 'Email đã xác thực' : 'Email chưa xác thực'}</span></div></div></div>{!editing && <button type="button" onClick={beginEdit} className="rounded-2xl border-2 border-[#6f9d91] bg-white/75 px-5 py-3 text-xs font-bold text-[#3f6d64] shadow-sm transition hover:bg-white">Chỉnh sửa hồ sơ</button>}</div></div>
+          <div className="relative overflow-hidden bg-gradient-to-r from-[#d4eae2] via-[#e8e0ef] to-[#f5d9d0] px-7 py-7"><span className="pointer-events-none absolute -right-8 -top-16 h-44 w-44 rounded-full border-[34px] border-white/20" /><div className="relative flex flex-wrap items-center justify-between gap-6"><div className="flex items-center gap-5">{(editing ? draft.avatar : profile.avatar) ? <img src={editing ? draft.avatar : profile.avatar} alt={fullName(profile)} className="h-24 w-24 rounded-[26px] border-4 border-white object-cover shadow-[0_14px_35px_rgba(55,75,68,0.2)]" referrerPolicy="no-referrer" /> : <span className="flex h-24 w-24 items-center justify-center rounded-[26px] border-4 border-white bg-[#e8efec] text-xs font-bold text-[#62736d]">No data</span>}<div><div className="flex flex-wrap items-center gap-2"><h2 className="text-2xl font-bold tracking-[-0.02em]">{fullName(profile)}</h2>{profile.emailVerified && <BadgeCheck className="h-5 w-5 text-[#3f7c72]" />}</div><p className="mt-1 text-sm font-medium text-[#60756e]">{profile.username ? `@${profile.username}` : 'No data'}</p><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full border border-[#90b8ac] bg-white/70 px-3 py-1 text-[10px] font-bold text-[#356b61]">{profile.role || 'No data'}</span><span className={`rounded-full border bg-white/70 px-3 py-1 text-[10px] font-bold ${profile.emailVerified ? 'border-[#90b8ac] text-[#356b61]' : 'border-[#dfb6aa] text-[#9b5a46]'}`}>{profile.emailVerified === null ? 'No data' : profile.emailVerified ? 'Email đã xác thực' : 'Email chưa xác thực'}</span></div></div></div>{!editing && <button type="button" onClick={beginEdit} className="rounded-2xl border-2 border-[#6f9d91] bg-white/75 px-5 py-3 text-xs font-bold text-[#3f6d64] shadow-sm transition hover:bg-white">Chỉnh sửa hồ sơ</button>}</div></div>
         </section>
 
         {error && <div className="flex items-center gap-3 rounded-2xl border-2 border-[#e2b6ad] bg-[#fff2ee] px-4 py-3 text-xs font-bold text-[#a64e3e]"><CircleAlert className="h-4 w-4" />{error}<button type="button" onClick={() => setError(null)} className="ml-auto"><X className="h-4 w-4" /></button></div>}
@@ -185,7 +167,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
         {!editing ? (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]">
             <section className="overflow-hidden rounded-[28px] border-2 border-[#b9d2ca] bg-white/90 shadow-[0_18px_50px_rgba(55,83,74,0.1)]"><div className="border-b-2 border-[#b9d2ca] bg-[#e4f1ed] px-6 py-5"><h3 className="text-base font-bold">Thông tin cá nhân</h3><p className="mt-1 text-xs text-[#657a73]">Các trường hiện được backend cho phép xem và cập nhật.</p></div><div className="grid gap-4 p-6 sm:grid-cols-2"><InfoCard icon={<UserRound className="h-5 w-5" />} label="Họ và tên" value={fullName(profile)} /><InfoCard icon={<Mail className="h-5 w-5" />} label="Địa chỉ email" value={profile.email} tone="lavender" /><InfoCard icon={<Phone className="h-5 w-5" />} label="Số điện thoại" value={profile.phone} tone="peach" /><InfoCard icon={<VenusAndMars className="h-5 w-5" />} label="Giới tính" value={genderLabel(profile.gender)} /><InfoCard icon={<MapPin className="h-5 w-5" />} label="Địa chỉ" value={profile.address} tone="lavender" /></div></section>
-            <aside className="space-y-6"><section className="overflow-hidden rounded-[28px] border-2 border-[#cbbfd6] bg-white/90 shadow-[0_18px_50px_rgba(76,62,84,0.1)]"><div className="border-b-2 border-[#cbbfd6] bg-[#eee8f3] px-5 py-4"><h3 className="text-sm font-bold">Trạng thái tài khoản</h3></div><div className="divide-y-2 divide-[#e2dbe8] px-5"><div className="flex items-center justify-between gap-3 py-4 text-xs"><span className="text-[#73817c]">Xác thực email</span><strong className={`flex items-center gap-1 ${profile.emailVerified ? 'text-[#377366]' : 'text-[#a25e4c]'}`}>{profile.emailVerified ? <CheckCircle2 className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{profile.emailVerified ? 'Đã xác thực' : 'Chưa xác thực'}</strong></div><div className="flex items-center justify-between py-4 text-xs"><span className="text-[#73817c]">Vai trò</span><strong>{profile.role}</strong></div><div className="flex items-center justify-between py-4 text-xs"><span className="text-[#73817c]">User ID</span><strong>#{profile.id}</strong></div></div></section><section className="rounded-[28px] border-2 border-[#dfb9ae] bg-[#fff3ef] p-5 text-xs leading-5 text-[#835f56]"><div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#a96652]" /><p>Username, vai trò và trạng thái tài khoản chỉ đọc; người dùng không thể tự thay đổi các trường này.</p></div></section></aside>
+            <aside className="space-y-6"><section className="overflow-hidden rounded-[28px] border-2 border-[#cbbfd6] bg-white/90 shadow-[0_18px_50px_rgba(76,62,84,0.1)]"><div className="border-b-2 border-[#cbbfd6] bg-[#eee8f3] px-5 py-4"><h3 className="text-sm font-bold">Trạng thái tài khoản</h3></div><div className="divide-y-2 divide-[#e2dbe8] px-5"><div className="flex items-center justify-between gap-3 py-4 text-xs"><span className="text-[#73817c]">Xác thực email</span><strong className={`flex items-center gap-1 ${profile.emailVerified ? 'text-[#377366]' : 'text-[#a25e4c]'}`}>{profile.emailVerified === null ? 'No data' : <>{profile.emailVerified ? <CheckCircle2 className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{profile.emailVerified ? 'Đã xác thực' : 'Chưa xác thực'}</>}</strong></div><div className="flex items-center justify-between py-4 text-xs"><span className="text-[#73817c]">Vai trò</span><strong>{profile.role || 'No data'}</strong></div><div className="flex items-center justify-between py-4 text-xs"><span className="text-[#73817c]">User ID</span><strong>{profile.id ? `#${profile.id}` : 'No data'}</strong></div></div></section><section className="rounded-[28px] border-2 border-[#dfb9ae] bg-[#fff3ef] p-5 text-xs leading-5 text-[#835f56]"><div className="flex gap-3"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#a96652]" /><p>Username, vai trò và trạng thái tài khoản chỉ đọc; người dùng không thể tự thay đổi các trường này.</p></div></section></aside>
           </div>
         ) : (
           <form onSubmit={saveProfile} className="overflow-hidden rounded-[28px] border-2 border-[#b9d2ca] bg-white/90 shadow-[0_18px_50px_rgba(55,83,74,0.1)]"><div className="border-b-2 border-[#b9d2ca] bg-gradient-to-r from-[#e2f0eb] to-[#eee8f3] px-6 py-5"><h3 className="text-base font-bold">Chỉnh sửa hồ sơ</h3><p className="mt-1 text-xs text-[#657a73]">Form này khớp với `PATCH /api/users/profile`.</p></div><div className="grid gap-5 p-6 sm:grid-cols-2">

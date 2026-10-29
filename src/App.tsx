@@ -26,9 +26,17 @@ import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
 import SettingsPage from './components/settings/SettingsPage';
 import NotificationsPage from './components/notifications/NotificationsPage';
+import FriendListPage from './components/friends/FriendListPage';
 import { BrandLogo, Button } from './components/common';
 import { authApi } from './services/authApi';
-import { clearStoredSession, getStoredAccessToken, getStoredUser } from './services/apiClient';
+import {
+  AUTH_SESSION_EXPIRED_EVENT,
+  clearStoredSession,
+  getStoredAccessToken,
+  getStoredRefreshToken,
+  getStoredUser,
+  setStoredUser,
+} from './services/apiClient';
 import { videoCallApi, type VideoCallRecord } from './services/videoCallApi';
 import { conversationApi, type ConversationParticipant } from './services/conversationApi';
 import {
@@ -51,19 +59,35 @@ function callErrorMessage(error: unknown): string {
 }
 
 interface ProtectedRouteProps {
-  isAuthenticated: boolean;
+  authStatus: AuthStatus;
   children: ReactNode;
 }
 
 function ProtectedRoute({
-  isAuthenticated,
+  authStatus,
   children,
 }: ProtectedRouteProps) {
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (authStatus !== 'authenticated') {
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
 
   return children;
+}
+
+type AuthStatus = 'initializing' | 'authenticated' | 'unauthenticated';
+
+function PublicRoute({ authStatus, children }: ProtectedRouteProps) {
+  if (authStatus === 'authenticated') return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+function AuthLoadingScreen() {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-brand-bg text-brand-primary" aria-live="polite" aria-label="Đang xác minh phiên đăng nhập">
+      <LoaderCircle className="h-7 w-7 animate-spin" aria-hidden="true" />
+    </main>
+  );
 }
 
 function NotFoundPage() {
@@ -115,9 +139,8 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('signbridge_auth') === 'true';
-  });
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('initializing');
+  const isAuthenticated = authStatus === 'authenticated';
 
   const [activeCall, setActiveCall] = useState<{ contact: CallableContact; call: VideoCallRecord } | null>(null);
   const [callCreating, setCallCreating] = useState(false);
@@ -141,6 +164,39 @@ export default function App() {
   const settledCallIds = useRef(new Set<number>());
   const statusDuringRequest = useRef(new Map<number, CallEvent>());
   const currentUserId = getStoredUser()?.userId;
+
+  useEffect(() => {
+    localStorage.removeItem('signify_friends_storage_v2');
+    localStorage.removeItem('signify.profile.preview');
+
+    const accessToken = getStoredAccessToken();
+    const refreshToken = getStoredRefreshToken();
+    if (accessToken?.startsWith('mock_') || refreshToken?.startsWith('mock_') || (!accessToken && !refreshToken)) {
+      clearStoredSession();
+      setAuthStatus('unauthenticated');
+      return;
+    }
+
+    let active = true;
+    void authApi.getProfile().then((response) => {
+      const user = response.data;
+      if (!active) return;
+      if (!response.success || !user || !Number.isSafeInteger(user.userId) || user.userId <= 0) {
+        clearStoredSession();
+        setAuthStatus('unauthenticated');
+        return;
+      }
+      setStoredUser(user);
+      localStorage.setItem('signbridge_auth', 'true');
+      setAuthStatus('authenticated');
+    }).catch((error: { status?: number }) => {
+      if (!active) return;
+      if (error.status === 401 || error.status === 403) clearStoredSession();
+      setAuthStatus('unauthenticated');
+    });
+
+    return () => { active = false; };
+  }, []);
 
   const setCurrentCall = (value: typeof activeCall) => {
     activeCallRef.current = value;
@@ -170,6 +226,17 @@ export default function App() {
     setCallSignalState('offline');
     setCurrentCall(null);
   };
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      authGeneration.current += 1;
+      resetCallSession();
+      setSessionGeneration((current) => current + 1);
+      setAuthStatus('unauthenticated');
+    };
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, handleSessionExpired);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !getStoredAccessToken()) return;
@@ -260,6 +327,7 @@ export default function App() {
     settings: '/settings',
     notifications: '/notifications',
     'admin-users': '/admin/users',
+    friends: '/friends',
   };
 
   const handleNavigate = (screen: Screen) => {
@@ -274,8 +342,12 @@ export default function App() {
     resetCallSession();
     setSessionGeneration((current) => current + 1);
     localStorage.setItem('signbridge_auth', 'true');
-    setIsAuthenticated(true);
-    navigate('/dashboard');
+    setAuthStatus('authenticated');
+    const from = (location.state as { from?: unknown } | null)?.from;
+    const destination = typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
+      ? from
+      : '/dashboard';
+    navigate(destination, { replace: true });
   };
 
   const handleLogout = () => {
@@ -283,7 +355,7 @@ export default function App() {
     resetCallSession();
     setSessionGeneration((current) => current + 1);
     authApi.logout().catch(() => clearStoredSession());
-    setIsAuthenticated(false);
+    setAuthStatus('unauthenticated');
     navigate('/login', { replace: true });
   };
 
@@ -387,6 +459,8 @@ export default function App() {
     }
   };
 
+  if (authStatus === 'initializing') return <AuthLoadingScreen />;
+
   return (
     <div
       id="applet-viewport-root"
@@ -411,31 +485,35 @@ export default function App() {
           <Route
             path="/login"
             element={
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                <AuthPage
-                  onNavigate={handleNavigate}
-                  onLoginSuccess={handleLoginSuccess}
-                />
-              </motion.div>
+              <PublicRoute authStatus={authStatus}>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <AuthPage
+                    onNavigate={handleNavigate}
+                    onLoginSuccess={handleLoginSuccess}
+                  />
+                </motion.div>
+              </PublicRoute>
             }
           />
 
           <Route
             path="/register"
             element={
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-              >
-                <RegisterPage onLoginSuccess={handleLoginSuccess} />
-              </motion.div>
+              <PublicRoute authStatus={authStatus}>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <RegisterPage onLoginSuccess={handleLoginSuccess} />
+                </motion.div>
+              </PublicRoute>
             }
           />
 
@@ -485,7 +563,7 @@ export default function App() {
             path="/dashboard"
             element={
               <ProtectedRoute
-                isAuthenticated={isAuthenticated}
+                authStatus={authStatus}
               >
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -508,48 +586,52 @@ export default function App() {
           <Route
             path="/profile"
             element={
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <ProfilePage
-                  onNavigate={handleNavigate}
-                  onLogout={handleLogout}
-                />
-              </motion.div>
-            }
-          />
-
-          <Route
-            path="/admin/users"
-            element={
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <AdminUserListPage
-                  onNavigate={handleNavigate}
-                  onLogout={handleLogout}
-                />
-              </motion.div>
-            }
-          />
-
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <ProtectedRoute authStatus={authStatus}>
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <SettingsPage onNavigate={handleNavigate} />
+                  <ProfilePage
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                  />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin/users"
+            element={
+              <ProtectedRoute authStatus={authStatus}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <AdminUserListPage
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                  />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute authStatus={authStatus}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <SettingsPage onNavigate={handleNavigate} onLogout={handleLogout} />
                 </motion.div>
               </ProtectedRoute>
             }
@@ -558,7 +640,7 @@ export default function App() {
           <Route
             path="/notifications"
             element={
-              <ProtectedRoute isAuthenticated={isAuthenticated}>
+              <ProtectedRoute authStatus={authStatus}>
                 <motion.div
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
@@ -572,10 +654,29 @@ export default function App() {
           />
 
           <Route
+            path="/friends"
+            element={
+              <ProtectedRoute authStatus={authStatus}>
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <FriendListPage
+                    onNavigate={handleNavigate}
+                    onLogout={handleLogout}
+                  />
+                </motion.div>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/call"
             element={
               <ProtectedRoute
-                isAuthenticated={isAuthenticated}
+                authStatus={authStatus}
               >
                 {activeCall && canEnterVideoCall(activeCall.call, currentUserId) ? (
                   <motion.div
@@ -620,7 +721,7 @@ export default function App() {
             path="/languages"
             element={
               <ProtectedRoute
-                isAuthenticated={isAuthenticated}
+                authStatus={authStatus}
               >
                 <motion.div
                   initial={{ opacity: 0, x: 15 }}

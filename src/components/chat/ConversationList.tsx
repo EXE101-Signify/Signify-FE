@@ -1,4 +1,4 @@
-import { Bell, CheckCheck, MessageSquarePlus, Pin, Search, Settings, SlidersHorizontal } from 'lucide-react';
+import {CheckCheck, Pin, Search, SlidersHorizontal, UserPlus } from 'lucide-react';
 import type { ChatConversationItem } from './types';
 
 interface ConversationListProps {
@@ -9,26 +9,36 @@ interface ConversationListProps {
   onSearchChange: (value: string) => void;
   onUnreadOnlyChange: (value: boolean) => void;
   onSelect: (id: string) => void;
-  onOpenSettings: () => void;
   onOpenNotifications: () => void;
+  onAddFriend?: () => void;
 }
 
-export default function ConversationList({ conversations, activeId, searchQuery, unreadOnly, onSearchChange, onUnreadOnlyChange, onSelect, onOpenSettings, onOpenNotifications }: ConversationListProps) {
+export default function ConversationList({
+  conversations,
+  activeId,
+  searchQuery,
+  unreadOnly,
+  onSearchChange,
+  onUnreadOnlyChange,
+  onSelect,
+  onOpenNotifications,
+  onAddFriend,
+}: ConversationListProps) {
   return (
     <section className="relative z-20 flex w-[365px] shrink-0 flex-col border-r-2 border-[#b8cec7] bg-[#f2eff6] shadow-[12px_0_34px_rgba(57,86,78,0.11)]">
       <header className="auth-dot-surface relative overflow-hidden border-b-2 border-[#cadbd5] bg-gradient-to-br from-[#dfede8] via-[#f0edf5] to-[#f3dcd4] px-6 pb-5 pt-6">
         <span className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-[#d2c5e3]/70" />
-        <div className="flex items-center justify-between">
-          <div className="relative">
-            <img src="/signify-logo-transparent.png" alt="Signify" className="h-9 w-auto object-contain object-left" />
-            <h1 className="mt-1 text-[27px] font-extrabold tracking-[-0.035em] text-[#21322e]">Tin nhắn</h1>
-          </div>
-        </div>
+        
 
-        <div className="relative mt-5">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#82918c]" />
-          <input value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Tìm cuộc trò chuyện" className="w-full rounded-[18px] border border-[#c8d8d3] bg-white/90 py-3.5 pl-10 pr-10 text-xs font-semibold text-[#263934] shadow-[0_10px_28px_rgba(58,79,72,0.11)] outline-none transition focus:border-[#6e9f94] focus:bg-white focus:ring-4 focus:ring-[#6e9f94]/15" />
-          <SlidersHorizontal className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#82918c]" />
+        <div className="relative mt-5 flex items-center gap-2.5">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#82918c]" />
+            <input value={searchQuery} onChange={(event) => onSearchChange(event.target.value)} placeholder="Tìm kiếm" className="w-full rounded-xl border border-[#c8d8d3] bg-white/90 py-3 pl-10 pr-10 text-xs font-semibold text-[#263934] shadow-[0_10px_28px_rgba(58,79,72,0.11)] outline-none transition focus:border-[#6e9f94] focus:bg-white focus:ring-4 focus:ring-[#6e9f94]/15" />
+            <SlidersHorizontal className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#82918c]" />
+          </div>
+          <button type="button" onClick={onAddFriend} title="Thêm bạn" aria-label="Thêm bạn" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#c8d8d3] bg-white/80 text-[#45675f] transition hover:border-[#3f7c72] hover:bg-[#e3f0ec] hover:text-[#3f7c72] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3f7c72]">
+            <UserPlus className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="mt-4 flex gap-2 text-[11px] font-bold">
@@ -48,7 +58,7 @@ export default function ConversationList({ conversations, activeId, searchQuery,
               {conversation.unread > 0 ? <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#c77b64] px-1.5 text-[10px] font-extrabold text-white">{conversation.unread}</span> : <CheckCheck className="h-3.5 w-3.5 shrink-0 text-[#7ba99e]" />}
             </button>
           );
-        }) : <div className="px-5 py-16 text-center"><p className="text-sm font-bold text-[#536660]">Không tìm thấy hội thoại</p><p className="mt-2 text-xs leading-5 text-[#8a9893]">Thử tìm bằng tên hoặc xem lại bộ lọc.</p></div>}
+        }) : <div className="px-5 py-16 text-center"><p className="text-sm font-bold text-[#536660]">No data</p></div>}
       </div>
     </section>
   );

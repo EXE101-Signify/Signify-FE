@@ -4,10 +4,7 @@ import {
   Lock, Mail, MapPin, Phone, User,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import GoogleButton from './GoogleButton';
-import GoogleAuthModal, { type GoogleUserInfo } from './GoogleAuthModal';
 import { emailApi } from '../../services/emailApi';
-import { setStoredSession, type TokenDTO, type UserDTO } from '../../services/apiClient';
 import {
   validateConfirmPassword, validateEmail, validateFullName, validatePassword,
 } from '../../utils/validation';
@@ -75,7 +72,6 @@ export default function RegisterPage({ onLoginSuccess }: { onLoginSuccess: () =>
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [globalError, setGlobalError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   useEffect(() => {
     if (!avatarFile) { setAvatarPreview(null); return; }
@@ -158,22 +154,6 @@ export default function RegisterPage({ onLoginSuccess }: { onLoginSuccess: () =>
     } catch (error) {
       setGlobalError(error instanceof Error ? error.message : 'Không thể gửi mã OTP. Vui lòng thử lại.');
     } finally { setIsSubmitting(false); }
-  };
-
-  const handleGoogleSuccess = (userInfo: GoogleUserInfo) => {
-    const userDTO: UserDTO = {
-      userId: Date.now(), username: userInfo.email.split('@')[0], role: 'USER', emailVerified: true,
-      email: userInfo.email, firstName: userInfo.name.split(' ')[0],
-      lastName: userInfo.name.split(' ').slice(1).join(' '), avatar: userInfo.avatar,
-    };
-    const tokenDTO: TokenDTO = {
-      accessToken: `mock_gg_access_token_${Date.now()}`,
-      refreshToken: `mock_gg_refresh_token_${Date.now()}`,
-      tokenType: 'Bearer', accessExpiresAt: Date.now() + 900000,
-      refreshExpiresAt: Date.now() + 604800000,
-    };
-    setStoredSession(tokenDTO, userDTO);
-    onLoginSuccess();
   };
 
   return <main id="register-page" className="min-h-screen bg-brand-bg px-4 py-10 text-brand-text sm:px-6 sm:py-14">
@@ -275,6 +255,5 @@ export default function RegisterPage({ onLoginSuccess }: { onLoginSuccess: () =>
       </section>
       <p className="mt-5 text-center text-xs text-brand-text-muted">Đã có tài khoản? <button type="button" onClick={() => navigate('/login')} className="font-bold text-brand-primary hover:underline">Đăng nhập</button></p>
     </div>
-    <GoogleAuthModal isOpen={isGoogleModalOpen} onClose={() => setIsGoogleModalOpen(false)} onSuccess={handleGoogleSuccess} />
   </main>;
 }

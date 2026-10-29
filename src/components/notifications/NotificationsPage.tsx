@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -10,12 +10,14 @@ import {
   MessageCircleMore,
   PhoneMissed,
   Settings,
-  Sparkles,
 } from 'lucide-react';
 import type { Screen } from '../../types';
+import { apiFetch } from '../../services/apiClient';
 
 type NotificationType =
   | 'DIRECT_MESSAGE'
+  | 'FRIEND_REQUEST'
+  | 'FRIEND_REQUEST_ACCEPTED'
   | 'MISSED_CALL'
   | 'SUBSCRIPTION_EXPIRING'
   | 'SUBSCRIPTION_EXPIRED';
@@ -34,53 +36,8 @@ interface NotificationsPageProps {
   onNavigate: (screen: Screen) => void;
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notification-1',
-    type: 'DIRECT_MESSAGE',
-    title: 'Minh Anh đã gửi tin nhắn',
-    content: 'Chiều nay mình gọi video nhé!',
-    time: '10:24',
-    group: 'Hôm nay',
-    read: false,
-  },
-  {
-    id: 'notification-2',
-    type: 'MISSED_CALL',
-    title: 'Bạn có một cuộc gọi nhỡ',
-    content: 'Bác sĩ Linh đã gọi cho bạn lúc 09:05.',
-    time: '09:05',
-    group: 'Hôm nay',
-    read: false,
-  },
-  {
-    id: 'notification-3',
-    type: 'SUBSCRIPTION_EXPIRING',
-    title: 'Gói Signify Pro sắp hết hạn',
-    content: 'Gói của bạn còn 5 ngày. Kiểm tra thông tin để không bị gián đoạn.',
-    time: '08:30',
-    group: 'Hôm nay',
-    read: false,
-  },
-  {
-    id: 'notification-4',
-    type: 'DIRECT_MESSAGE',
-    title: 'Thầy Hùng đã gửi tin nhắn',
-    content: 'Bài tập tuần này nằm trong file nhé.',
-    time: 'Hôm qua, 20:36',
-    group: 'Trước đó',
-    read: true,
-  },
-  {
-    id: 'notification-5',
-    type: 'SUBSCRIPTION_EXPIRED',
-    title: 'Gói dùng thử đã kết thúc',
-    content: 'Một số tính năng nâng cao đã tạm dừng. Bạn vẫn có thể tiếp tục nhắn tin.',
-    time: '03/10',
-    group: 'Trước đó',
-    read: true,
-  },
-];
+interface ApiNotification { id: number; type: NotificationType; title: string; content: string; read: boolean; createdAt: number; }
+interface ApiPage<T> { content: T[]; }
 
 const TYPE_STYLES: Record<NotificationType, {
   icon: ComponentType<{ className?: string }>;
@@ -93,6 +50,18 @@ const TYPE_STYLES: Record<NotificationType, {
     iconClass: 'border-[#a9cfc2] bg-[#e1f0eb] text-[#377366]',
     label: 'Tin nhắn',
     action: 'Mở trò chuyện',
+  },
+  FRIEND_REQUEST: {
+    icon: MessageCircleMore,
+    iconClass: 'border-[#a9cfc2] bg-[#e1f0eb] text-[#377366]',
+    label: 'Lời mời kết bạn',
+    action: 'Mở danh bạ',
+  },
+  FRIEND_REQUEST_ACCEPTED: {
+    icon: CheckCheck,
+    iconClass: 'border-[#a9cfc2] bg-[#e1f0eb] text-[#377366]',
+    label: 'Kết bạn',
+    action: 'Mở danh bạ',
   },
   MISSED_CALL: {
     icon: PhoneMissed,
@@ -115,9 +84,24 @@ const TYPE_STYLES: Record<NotificationType, {
 };
 
 export default function NotificationsPage({ onNavigate }: NotificationsPageProps) {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const loadNotifications = () => apiFetch<ApiPage<ApiNotification>>('/api/notifications?page=0&size=100')
+    .then((response) => setNotifications((response.data?.content ?? []).map((item) => {
+      const date = new Date(item.createdAt);
+      return {
+        id: String(item.id), type: item.type, title: item.title, content: item.content,
+        time: date.toLocaleString('vi-VN'),
+        group: date.toDateString() === new Date().toDateString() ? 'Hôm nay' : 'Trước đó',
+        read: item.read,
+      };
+    })))
+    .finally(() => setLoading(false));
+
+  useEffect(() => { void loadNotifications().catch(() => setNotifications([])); }, []);
 
   const unreadCount = notifications.filter((item) => !item.read).length;
   const visibleNotifications = useMemo(
@@ -125,14 +109,18 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
     [notifications, unreadOnly],
   );
 
-  const markRead = (id: string) => {
-    setNotifications((current) => current.map((item) => item.id === id ? { ...item, read: true } : item));
+  const markRead = async (id: string) => {
+    try {
+      await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications((current) => current.map((item) => item.id === id ? { ...item, read: true } : item));
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Không thể cập nhật thông báo.'); }
   };
 
-  const markAllRead = () => {
-    setNotifications((current) => current.map((item) => ({ ...item, read: true })));
-    setNotice('Đã đánh dấu tất cả thông báo là đã đọc.');
-    window.setTimeout(() => setNotice(null), 2800);
+  const markAllRead = async () => {
+    try {
+      await apiFetch('/api/notifications/read-all', { method: 'PATCH' });
+      setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Không thể cập nhật thông báo.'); }
   };
 
   const openNotification = (item: NotificationItem) => {
@@ -173,10 +161,10 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
               <button type="button" onClick={() => setUnreadOnly(false)} className={`rounded-full border-2 px-4 py-2 transition ${!unreadOnly ? 'border-[#3f7c72] bg-[#3f7c72] text-white shadow-md shadow-[#3f7c72]/20' : 'border-[#8bb0a6] bg-white text-[#45675f] hover:bg-[#edf6f2]'}`}>Tất cả <span className="ml-1 opacity-75">{notifications.length}</span></button>
               <button type="button" onClick={() => setUnreadOnly(true)} className={`rounded-full border-2 px-4 py-2 transition ${unreadOnly ? 'border-[#3f7c72] bg-[#3f7c72] text-white shadow-md shadow-[#3f7c72]/20' : 'border-[#8bb0a6] bg-white text-[#45675f] hover:bg-[#edf6f2]'}`}>Chưa đọc <span className="ml-1 opacity-75">{unreadCount}</span></button>
             </div>
-            <span className="flex items-center gap-2 text-[10px] font-bold text-[#74857f]"><Sparkles className="h-3.5 w-3.5 text-[#9a758f]" />Cập nhật gần nhất vừa xong</span>
+            <span className="flex items-center gap-2 text-[10px] font-bold text-[#74857f]">{loading ? 'Đang tải…' : `${notifications.length} thông báo`}</span>
           </div>
 
-          {visibleNotifications.length ? (
+          {loading ? <p className="px-6 py-12 text-center text-sm text-[#74857f]">Đang tải thông báo…</p> : visibleNotifications.length ? (
             <div>
               {(['Hôm nay', 'Trước đó'] as const).map((group) => {
                 const items = visibleNotifications.filter((item) => item.group === group);
@@ -194,11 +182,10 @@ export default function NotificationsPage({ onNavigate }: NotificationsPageProps
               })}
             </div>
           ) : (
-            <div className="px-6 py-20 text-center"><span className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] border-2 border-[#bdd4cc] bg-[#e5f1ed] text-[#3f7c72]"><CheckCheck className="h-7 w-7" /></span><h3 className="mt-5 text-base font-extrabold">Không còn thông báo chưa đọc</h3><p className="mt-2 text-xs text-[#7a8a84]">Bạn đã xử lý tất cả cập nhật mới.</p><button type="button" onClick={() => setUnreadOnly(false)} className="mt-5 rounded-xl border-2 border-[#79a69a] bg-white px-4 py-2.5 text-xs font-bold text-[#3f6d64]">Xem tất cả thông báo</button></div>
+            <div className="px-6 py-20 text-center"><h3 className="text-base font-extrabold">No data</h3></div>
           )}
         </section>
 
-        <p className="mt-5 text-center text-[10px] font-medium text-[#7f8f89]">Thông báo đang được mô phỏng theo dữ liệu API backend, chưa kết nối dữ liệu thật.</p>
       </div>
 
       {notice && <div role="status" className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border-2 border-[#b9d2ca] bg-white px-4 py-3 text-xs font-bold text-[#40564f] shadow-[0_18px_45px_rgba(45,72,64,0.18)]"><Check className="h-4 w-4 text-[#3f7c72]" />{notice}</div>}

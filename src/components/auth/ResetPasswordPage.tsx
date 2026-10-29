@@ -54,18 +54,13 @@ export default function ResetPasswordPage() {
 
     setIsSubmitting(true);
 
-    // Mock API cập nhật mật khẩu mới.
-    window.setTimeout(() => {
-      setIsSubmitting(false);
-
-      navigate('/login', {
-        replace: true,
-        state: {
-          message:
-            'Đổi mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.',
-        },
-      });
-    }, 700);
+    try {
+      if (!routeState.otp) throw new Error('Mã xác thực không hợp lệ.');
+      await emailApi.verifyForgotPasswordOtp(routeState.email, routeState.otp, password);
+      navigate('/login', { replace: true, state: { message: 'Đổi mật khẩu thành công. Bạn có thể đăng nhập bằng mật khẩu mới.' } });
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : 'Không thể cập nhật mật khẩu.');
+    } finally { setIsSubmitting(false); }
   };
 
   return (

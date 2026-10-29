@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Languages, LogOut, MessageCircle, Settings, UserRound, Users, X } from 'lucide-react';
 import type { CallableContact, Screen } from '../types';
-import { getStoredUser } from '../services/apiClient';
+import { getStoredUser, setStoredUser, type UserDTO } from '../services/apiClient';
+import { authApi } from '../services/authApi';
 import {
   conversationApi,
   type ChatMessageResponse,
@@ -15,6 +16,7 @@ import { userBlockApi } from '../services/userBlockApi';
 import ConversationList from './chat/ConversationList';
 import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
+import AddFriendModal from './friends/AddFriendModal';
 import type {
   ChatAttachmentItem,
   ChatConversationItem,
@@ -170,8 +172,9 @@ function validId(value: string): number {
   return parsed;
 }
 
-export default function Dashboard({ onNavigate, onStartCall, callCreating, callError }: DashboardProps) {
+export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreating, callError }: DashboardProps) {
   const currentUserId = getStoredUser()?.userId;
+  const [currentUser, setCurrentUser] = useState<UserDTO | null>(() => getStoredUser());
   const [conversations, setConversations] = useState<DashboardConversation[]>([]);
   const [activeId, setActiveId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,10 +184,22 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<number>>(new Set());
+  const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const activeIdRef = useRef(activeId);
   const seenEventIds = useRef(new Set<string>());
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  useEffect(() => {
+    let active = true;
+    void authApi.getProfile().then((response) => {
+      if (!active || !response.data) return;
+      setStoredUser(response.data);
+      setCurrentUser(response.data);
+    }).catch(() => { /* Keep the cached profile if /me is unavailable. */ });
+    return () => { active = false; };
+  }, []);
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -586,7 +601,40 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
   };
 
   return (
-    <main className="relative flex h-screen min-h-[680px] overflow-hidden bg-[#f7f5f9] text-[#1f2d2a]">
+    <main className="relative flex h-screen min-h-[680px] overflow-hidden bg-brand-bg text-brand-text">
+      <nav aria-label="Điều hướng nhanh" className="relative z-30 flex h-full min-h-0 w-[68px] shrink-0 flex-col items-center border-r border-brand-border bg-brand-surface py-4 text-brand-text-muted">
+        <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-brand-primary-light text-brand-primary ring-1 ring-brand-border">
+          {currentUser?.avatar ? <img src={currentUser.avatar} alt="Ảnh đại diện" className="h-full w-full object-cover" /> : <span className="text-[9px] font-bold">{currentUser ? (currentUser.firstName?.[0] || currentUser.username?.[0] || '—').toUpperCase() : 'No data'}</span>}
+        </div>
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <button type="button" onClick={() => onNavigate('dashboard')} title="Tin nhắn" aria-label="Tin nhắn" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-primary-light text-brand-primary transition hover:bg-brand-primary hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => onNavigate('friends')} title="Danh sách bạn bè" aria-label="Danh sách bạn bè" className="flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+            <Users className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="relative mt-auto">
+          {settingsMenuOpen && (
+            <div role="menu" aria-label="Tùy chọn tài khoản" className="absolute bottom-0 left-14 z-50 w-64 overflow-hidden rounded-xl border border-brand-border bg-brand-surface p-2 text-brand-text shadow-xl">
+              <button type="button" role="menuitem" onClick={() => { setSettingsMenuOpen(false); onNavigate('profile'); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-brand-primary-light">
+                <UserRound className="h-4 w-4 shrink-0 text-brand-primary" />
+                <span className="min-w-0"><span className="block text-sm font-bold">Thông tin tài khoản</span><span className="block truncate text-xs text-brand-text-muted">{currentUser?.email || currentUser?.username || 'No data'}</span></span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setSettingsMenuOpen(false); onNavigate('languages'); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-semibold transition hover:bg-brand-primary-light">
+                <Languages className="h-4 w-4 text-brand-primary" />Ngôn ngữ<ChevronRight className="ml-auto h-4 w-4 text-brand-text-muted" />
+              </button>
+              <div className="my-1 border-t border-brand-border" />
+              <button type="button" role="menuitem" onClick={() => { setSettingsMenuOpen(false); onLogout(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold text-brand-error transition hover:bg-brand-error-light">
+                <LogOut className="h-4 w-4" />Đăng xuất
+              </button>
+            </div>
+          )}
+          <button type="button" onClick={() => setSettingsMenuOpen((open) => !open)} aria-expanded={settingsMenuOpen} title="Cài đặt" aria-label="Mở cài đặt" className={`flex h-11 w-11 items-center justify-center rounded-xl transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary ${settingsMenuOpen ? 'bg-brand-primary-light text-brand-primary' : 'hover:bg-brand-primary-light hover:text-brand-primary'}`}>
+            <Settings className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+      </nav>
       <ConversationList
         conversations={visibleConversations}
         activeId={activeId}
@@ -595,8 +643,8 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
         onSearchChange={setSearchQuery}
         onUnreadOnlyChange={setUnreadOnly}
         onSelect={selectConversation}
-        onOpenSettings={() => onNavigate('settings')}
         onOpenNotifications={() => onNavigate('notifications')}
+        onAddFriend={() => setIsAddFriendModalOpen(true)}
       />
       {activeConversation ? (
         <>
@@ -629,8 +677,7 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
       ) : (
         <section className="flex min-w-0 flex-1 items-center justify-center bg-[#f7f5f9] px-8 text-center">
           <div>
-            <h2 className="text-lg font-extrabold text-[#263934]">{loadingConversations ? 'Đang tải cuộc trò chuyện…' : 'Chưa có cuộc trò chuyện'}</h2>
-            <p className="mt-2 max-w-sm text-sm leading-6 text-[#71817c]">{conversationsError || (loadingConversations ? 'Đang kết nối với danh sách conversation của bạn.' : 'Các cuộc trò chuyện sẽ xuất hiện tại đây khi có dữ liệu từ máy chủ.')}</p>
+            <h2 className="text-lg font-extrabold text-[#263934]">{loadingConversations ? 'Đang tải cuộc trò chuyện…' : conversationsError || 'No data'}</h2>
           </div>
         </section>
       )}
@@ -648,6 +695,12 @@ export default function Dashboard({ onNavigate, onStartCall, callCreating, callE
           <button type="button" onClick={() => setNotice(null)} aria-label="Đóng thông báo" className="ml-2 text-[#87958f]"><X className="h-4 w-4" /></button>
         </div>
       )}
+
+      <AddFriendModal
+        isOpen={isAddFriendModalOpen}
+        onClose={() => setIsAddFriendModalOpen(false)}
+        onFriendAdded={() => showNotice('Đã gửi lời mời kết bạn thành công.')}
+      />
     </main>
   );
 }

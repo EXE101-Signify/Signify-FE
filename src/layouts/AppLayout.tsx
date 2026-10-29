@@ -16,7 +16,7 @@ import { BrandLogo, PageHeader } from '../components/common';
 
 import { getStoredUser } from '../services/apiClient';
 
-type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'settings' | 'admin-users'>;
+type AppScreen = Extract<Screen, 'dashboard' | 'languages' | 'profile' | 'settings' | 'admin-users' | 'friends'>;
 
 interface AppLayoutProps {
   activeScreen?: AppScreen;
@@ -52,9 +52,9 @@ export default function AppLayout({
   const currentUser = getStoredUser();
   const displayName = currentUser
     ? ([currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') || currentUser.username)
-    : 'Thanh Liêm';
+    : 'No data';
   const userRoleLabel = currentUser?.role === 'ADMIN' ? 'Pro Admin' : 'Thành viên Pro';
-  const avatarSrc = currentUser?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=150';
+  const avatarSrc = currentUser?.avatar;
 
   const isCurrentScreen = (screen: AppScreen) => {
     if (activeScreen) return activeScreen === screen;
@@ -63,6 +63,7 @@ export default function AppLayout({
     if (screen === 'profile') return location.pathname === '/profile';
     if (screen === 'settings') return location.pathname === '/settings';
     if (screen === 'admin-users') return location.pathname === '/admin/users';
+    if (screen === 'friends') return location.pathname === '/friends';
     return false;
   };
 
@@ -148,8 +149,8 @@ export default function AppLayout({
 
             <button
               type="button"
-              className={getNavItemClass(false)}
-              onClick={onContactsClick || (() => handleNav('dashboard', '/dashboard'))}
+              className={getNavItemClass(isCurrentScreen('friends'))}
+              onClick={onContactsClick || (() => handleNav('friends', '/friends'))}
             >
               <Users
                 className="h-4 w-4"
@@ -178,12 +179,7 @@ export default function AppLayout({
             onClick={() => handleNav('profile', '/profile')}
             className="flex items-center gap-3 w-full text-left cursor-pointer group"
           >
-            <img
-              src={avatarSrc}
-              alt={`Ảnh đại diện ${displayName}`}
-              className="h-9 w-9 rounded-full border border-brand-border-high object-cover group-hover:scale-105 transition-transform"
-              referrerPolicy="no-referrer"
-            />
+            {avatarSrc ? <img src={avatarSrc} alt={`Ảnh đại diện ${displayName}`} className="h-9 w-9 rounded-full border border-brand-border-high object-cover group-hover:scale-105 transition-transform" referrerPolicy="no-referrer" /> : <span className="flex h-9 w-9 items-center justify-center rounded-full border border-brand-border-high bg-brand-bg text-[10px] font-bold">{currentUser ? displayName.slice(0, 1).toUpperCase() : '—'}</span>}
 
             <div className="min-w-0 flex-1">
               <div className="truncate text-xs font-bold text-brand-text group-hover:text-brand-primary transition-colors">

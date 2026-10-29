@@ -134,4 +134,15 @@ export const authApi = {
       method: 'GET',
     });
   },
+
+  async updateProfile(profile: {
+    email: string; firstName: string; lastName: string; avatar: string;
+    phone: string; gender: boolean | null; address: string;
+  }): Promise<ApiResponse<UserDTO>> {
+    return apiFetch<UserDTO>('/api/users/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+  },
 };
