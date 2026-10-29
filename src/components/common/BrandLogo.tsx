@@ -11,7 +11,7 @@ export default function BrandLogo({
 }: BrandLogoProps) {
   return (
     <div className="flex items-center gap-3" aria-label="SIGNIFY">
-      <div
+      {/* <div
         className={`flex shrink-0 items-center justify-center rounded-xl ${
           compact ? 'h-9 w-9' : 'h-10 w-10'
         } ${
@@ -24,9 +24,9 @@ export default function BrandLogo({
           className={compact ? 'h-4 w-4' : 'h-5 w-5'}
           aria-hidden="true"
         />
-      </div>
+      </div> */}
 
-      <div className="min-w-0">
+      {/* <div className="min-w-0">
         <span
           className={`block font-black tracking-tight ${
             compact ? 'text-lg' : 'text-xl'
@@ -44,7 +44,7 @@ export default function BrandLogo({
             AI Sign Interpreter
           </span>
         )}
-      </div>
+      </div> */}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import {
   useRef,
-  type ClipboardEvent,
   type ChangeEvent,
+  type ClipboardEvent,
   type KeyboardEvent,
 } from 'react';
 
@@ -77,7 +77,7 @@ export default function OtpInput({
 
   return (
     <div
-      className="flex justify-center gap-2"
+      className="flex justify-between gap-2"
       onPaste={handlePaste}
       aria-label="Nhập mã OTP"
     >
@@ -96,7 +96,19 @@ export default function OtpInput({
           aria-label={`Số OTP thứ ${index + 1}`}
           onChange={(event) => updateDigit(index, event)}
           onKeyDown={(event) => handleKeyDown(index, event)}
-          className="h-14 w-12 rounded-xl border border-brand-border bg-brand-bg text-center text-xl font-black text-brand-text outline-none transition-all focus:border-brand-primary focus:bg-white focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-60"
+          className={[
+            'h-13 min-w-0 flex-1 rounded-md border bg-white',
+            'text-center text-lg font-semibold text-brand-text',
+            'outline-none transition-colors',
+            'hover:border-gray-400',
+            'focus:border-brand-primary focus:ring-2',
+            'focus:ring-brand-primary/15',
+            'disabled:cursor-not-allowed disabled:bg-brand-surface-container',
+            'disabled:opacity-60',
+            digit
+              ? 'border-brand-primary'
+              : 'border-brand-border-high',
+          ].join(' ')}
         />
       ))}
     </div>
