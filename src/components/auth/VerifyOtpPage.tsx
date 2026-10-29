@@ -100,6 +100,7 @@ export default function VerifyOtpPage() {
             {
               username: regData.username,
               password: regData.password,
+              otp,
               email: regData.email,
               firstName: regData.firstName,
               lastName: regData.lastName,

@@ -10,12 +10,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import type { Screen } from '../types';
 import AuthShell from './auth/AuthShell';
-import GoogleButton from './auth/GoogleButton';
-import GoogleAuthModal, { type GoogleUserInfo } from './auth/GoogleAuthModal';
 import { Button, Input } from './common';
 import { validatePassword } from '../utils/validation';
 import { authApi } from '../services/authApi';
-import { setStoredSession, type UserDTO, type TokenDTO } from '../services/apiClient';
 
 interface AuthPageProps {
   onNavigate: (screen: Screen) => void;
@@ -41,7 +38,6 @@ export default function AuthPage({
   }>({});
   const [globalError, setGlobalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
   const handleBlurField = (field: 'username' | 'password') => {
     setFieldErrors((prev) => {
@@ -64,7 +60,7 @@ export default function AuthPage({
     setGlobalError('');
 
     const usernameErr = !username.trim() ? 'Vui lòng nhập tên đăng nhập.' : null;
-    const passErr = password === '••••••••' ? null : validatePassword(password);
+    const passErr = validatePassword(password);
 
     if (usernameErr || passErr) {
       setFieldErrors({
@@ -96,34 +92,6 @@ export default function AuthPage({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleGoogleSuccess = (userInfo: GoogleUserInfo) => {
-    const userDTO: UserDTO = {
-      userId: Date.now(),
-      username: userInfo.email.split('@')[0],
-      role: 'USER',
-      emailVerified: true,
-      email: userInfo.email,
-      firstName: userInfo.name.split(' ')[0],
-      lastName: userInfo.name.split(' ').slice(1).join(' '),
-      avatar: userInfo.avatar,
-    };
-    const tokenDTO: TokenDTO = {
-      accessToken: `mock_gg_access_token_${Date.now()}`,
-      refreshToken: `mock_gg_refresh_token_${Date.now()}`,
-      tokenType: 'Bearer',
-      accessExpiresAt: Date.now() + 900000,
-      refreshExpiresAt: Date.now() + 604800000,
-    };
-    setStoredSession(tokenDTO, userDTO);
-    onLoginSuccess();
-  };
-
-  const handleQuickLogin = () => {
-    setUsername('thanhliem');
-    setPassword('••••••••');
-    onLoginSuccess();
   };
 
   return (
@@ -241,12 +209,6 @@ export default function AuthPage({
         </button>
       </p>
 
-      {/* Google Login Modal */}
-      <GoogleAuthModal
-        isOpen={isGoogleModalOpen}
-        onClose={() => setIsGoogleModalOpen(false)}
-        onSuccess={handleGoogleSuccess}
-      />
     </AuthShell>
   );
 }

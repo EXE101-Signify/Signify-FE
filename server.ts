@@ -7,7 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
@@ -17,12 +17,10 @@ function getAiClient(): GoogleGenAI {
   if (!aiClient) {
     const key = process.env.GEMINI_API_KEY;
     if (!key) {
-      console.warn(
-        "GEMINI_API_KEY is not defined. AI translations will fall back to simulation.",
-      );
+      throw new Error("GEMINI_API_KEY is not configured.");
     }
     aiClient = new GoogleGenAI({
-      apiKey: key || "MOCK_KEY",
+      apiKey: key,
       httpOptions: {
         headers: {
           "User-Agent": "aistudio-build",
@@ -43,34 +41,7 @@ app.post("/api/translate", async (req, res) => {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    // Elegant fallback simulation representing Vietnamese sign language grammar rules
-    // (Subject + Object + Verb/Gesture shorthand, facial expressions, directions)
-    console.log("Simulating translation (no API key configured)");
-    let translated = "";
-    let explanation = "";
-    let visualSequence: string[] = [];
-
-    if (mode === "text_to_sign") {
-      visualSequence = text
-        .toUpperCase()
-        .split(" ")
-        .map((word: string) => `[${word}]`);
-      translated = `Chuỗi ký hiệu: ${visualSequence.join(" ➔ ")}`;
-      explanation = `Cách thức thực hiện: Mô tả từng ký hiệu tương ứng với các từ khóa chính lực đẩy trong từ "${text}". Để diễn tả hiệu quả, duy trì ánh mắt tự nhiên và nét mặt tươi vui.`;
-    } else if (mode === "sign_to_text") {
-      translated = `Dịch chuẩn: "${text.charAt(0).toUpperCase() + text.slice(1)}"`;
-      explanation = `Nhận diện ngữ cảnh giao tiếp thông thường, chuyển cấu trúc động học ký hiệu về câu văn xuôi tiếng Việt hoàn chỉnh, lưu loát.`;
-    } else {
-      translated = `SignBridge AI: "${text}" - Hệ thống phản hồi hỗ trợ giao tiếp ngôn ngữ ký hiệu.`;
-      explanation = `Trợ lý AI sẵn sàng giải đáp thắc mắc và hỗ trợ phiên dịch.`;
-    }
-
-    return res.json({
-      translated,
-      explanation,
-      visualSequence,
-      isFallback: true,
-    });
+    return res.status(503).json({ error: "AI translation is unavailable." });
   }
 
   try {

@@ -22,6 +22,7 @@ export interface LoginParams {
 export interface RegisterParams {
   username: string;
   password: string;
+  otp: string;
   email?: string;
   firstName?: string;
   lastName?: string;
@@ -63,6 +64,7 @@ export const authApi = {
     const requestObj = {
       username: params.username,
       password: params.password,
+      otp: params.otp,
       email: params.email || undefined,
       firstName: params.firstName || undefined,
       lastName: params.lastName || undefined,
@@ -130,6 +132,17 @@ export const authApi = {
   async getProfile(): Promise<ApiResponse<UserDTO>> {
     return apiFetch<UserDTO>('/api/users/me', {
       method: 'GET',
+    });
+  },
+
+  async updateProfile(profile: {
+    email: string; firstName: string; lastName: string; avatar: string;
+    phone: string; gender: boolean | null; address: string;
+  }): Promise<ApiResponse<UserDTO>> {
+    return apiFetch<UserDTO>('/api/users/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
     });
   },
 };

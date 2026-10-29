@@ -9,7 +9,10 @@ export type Screen =
   | 'call'
   | 'languages'
   | 'profile'
-  | 'admin-users';
+  | 'settings'
+  | 'notifications'
+  | 'admin-users'
+  | 'friends';
 
 export interface UserProfile {
   id: string;
@@ -32,6 +35,11 @@ export interface Contact {
   status: 'online' | 'offline' | 'busy';
   avatar: string;
   lastCall: string;
+}
+
+export interface CallableContact extends Contact {
+  userId: number;
+  conversationId: number;
 }
 
 export interface Message {
