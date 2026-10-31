@@ -179,7 +179,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
   const [activeId, setActiveId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [conversationsError, setConversationsError] = useState<string | null>(null);

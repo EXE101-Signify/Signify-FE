@@ -40,8 +40,9 @@ export default function ConversationInfo({ conversation, open, blocked, onClose,
   };
 
   return (
-    <aside className="auth-dot-surface hidden w-[310px] shrink-0 overflow-y-auto border-l-2 border-[#cfc5d8] bg-[#f3edf6] shadow-[-10px_0_30px_rgba(76,62,84,0.08)] xl:block">
+    <aside className="auth-dot-surface fixed inset-y-0 right-0 z-40 w-[min(310px,88vw)] shrink-0 overflow-y-auto border-l-2 border-[#cfc5d8] bg-[#f3edf6] shadow-[-10px_0_30px_rgba(76,62,84,0.12)] xl:static xl:z-auto xl:w-[310px] xl:shadow-[-10px_0_30px_rgba(76,62,84,0.08)]">
       <div className="flex h-[88px] items-center justify-center border-b-2 border-[#d8cfdf] bg-[#ebe3f1]/90 px-5 backdrop-blur">
+        <button type="button" onClick={onClose} aria-label="Đóng thông tin hội thoại" className="absolute right-3 top-5 flex h-11 w-11 items-center justify-center rounded-xl text-[#526a63] hover:bg-white focus-visible:outline-2 focus-visible:outline-[#3f7c72] xl:hidden"><X className="h-5 w-5" /></button>
         <h2 className="text-sm font-extrabold text-[#263934]">
           Thông tin hội thoại
         </h2>

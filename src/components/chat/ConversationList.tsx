@@ -25,7 +25,7 @@ export default function ConversationList({
   onAddFriend,
 }: ConversationListProps) {
   return (
-    <section className="relative z-20 flex w-[365px] shrink-0 flex-col border-r-2 border-[#b8cec7] bg-[#f2eff6] shadow-[12px_0_34px_rgba(57,86,78,0.11)]">
+    <section className={`relative z-20 ${activeId ? 'hidden md:flex' : 'flex'} w-full shrink-0 flex-col border-r-2 border-[#b8cec7] bg-[#f2eff6] shadow-[12px_0_34px_rgba(57,86,78,0.11)] md:w-[300px] lg:w-[340px] xl:w-[365px]`}>
       <header className="auth-dot-surface relative overflow-hidden border-b-2 border-[#cadbd5] bg-gradient-to-br from-[#dfede8] via-[#f0edf5] to-[#f3dcd4] px-6 pb-5 pt-6">
         <span className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full bg-[#d2c5e3]/70" />
         
@@ -51,7 +51,7 @@ export default function ConversationList({
         {conversations.length ? conversations.map((conversation) => {
           const active = conversation.id === activeId;
           return (
-            <button key={conversation.id} type="button" onClick={() => onSelect(conversation.id)} className={`relative mb-2 flex w-full items-center gap-3 overflow-hidden rounded-[20px] border px-3.5 py-3.5 text-left transition ${active ? 'border-[#a8c9bf] bg-[#e1efea] shadow-[0_12px_30px_rgba(63,106,94,0.15)]' : 'border-white/50 bg-white/35 hover:border-[#d4dfdb] hover:bg-white/80'}`}>
+            <button key={conversation.id} type="button" onClick={() => onSelect(conversation.id)} aria-current={active ? 'true' : undefined} className={`relative mb-2 flex w-full items-center gap-3 overflow-hidden rounded-2xl border px-3.5 py-3.5 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3f7c72] ${active ? 'border-[#a8c9bf] bg-[#e1efea] shadow-[0_12px_30px_rgba(63,106,94,0.15)]' : 'border-white/50 bg-white/35 hover:border-[#d4dfdb] hover:bg-white/80'}`}>
               {active && <span className="absolute inset-y-2.5 left-0 w-1.5 rounded-r-full bg-[#c5745b]" />}
               <span className="relative shrink-0"><img src={conversation.avatar} alt="" className="h-12 w-12 rounded-2xl object-cover" referrerPolicy="no-referrer" /><i className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white ${conversation.presence === 'online' ? 'bg-[#62ad8d]' : conversation.presence === 'busy' ? 'bg-[#d89b63]' : 'bg-[#b8c2be]'}`} /></span>
               <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><strong className="truncate text-sm text-[#23342f]">{conversation.name}</strong><small className={`shrink-0 text-[10px] ${conversation.unread ? 'font-bold text-[#3f7c72]' : 'text-[#96a29e]'}`}>{conversation.time}</small></span><span className="mt-1 flex items-center gap-1.5"><span className={`truncate text-xs ${conversation.unread ? 'font-bold text-[#40534d]' : 'text-[#7a8984]'}`}>{conversation.lastMessage}</span>{conversation.pinned && <Pin className="h-3 w-3 shrink-0 rotate-45 text-[#869690]" />}</span></span>
