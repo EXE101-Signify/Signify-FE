@@ -34,7 +34,6 @@
 }
 
 html {
-  min-width: 1024px;
   background: var(--color-brand-bg);
   color: var(--color-brand-text);
   font-family: var(--font-sans);
@@ -43,7 +42,6 @@ html {
 }
 
 body {
-  min-width: 1024px;
   min-height: 100vh;
   margin: 0;
   background: var(--color-brand-bg);
@@ -53,7 +51,9 @@ body {
 }
 
 html:has(#register-page),
-body:has(#register-page) {
+body:has(#register-page),
+html:has(#auth-login-page),
+body:has(#auth-login-page) {
   min-width: 320px;
 }
 

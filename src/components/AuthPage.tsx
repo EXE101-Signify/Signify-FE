@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import {
   CheckCircle2,
+  Eye,
+  EyeOff,
   Lock,
   LogIn,
   Mail,
@@ -38,6 +40,8 @@ export default function AuthPage({
   }>({});
   const [globalError, setGlobalError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberAccount, setRememberAccount] = useState(true);
 
   const handleBlurField = (field: 'username' | 'password') => {
     setFieldErrors((prev) => {
@@ -67,7 +71,6 @@ export default function AuthPage({
         username: usernameErr || undefined,
         password: passErr || undefined,
       });
-      setGlobalError('Thông tin đăng nhập không hợp lệ. Vui lòng kiểm tra lại.');
       return;
     }
 
@@ -83,12 +86,15 @@ export default function AuthPage({
       if (res.success) {
         onLoginSuccess();
       } else {
-        setGlobalError(res.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+        setGlobalError('Tên đăng nhập hoặc mật khẩu không chính xác.');
       }
-    } catch (err: any) {
-      setGlobalError(
-        err.message || 'Đăng nhập không thành công. Mật khẩu hoặc tên đăng nhập không đúng.'
-      );
+    } catch (err: unknown) {
+      const status = typeof err === 'object' && err !== null && 'status' in err
+        ? (err as { status?: number }).status
+        : undefined;
+      setGlobalError(status === 401 || status === 403
+        ? 'Tên đăng nhập hoặc mật khẩu không chính xác.'
+        : 'Không thể kết nối đến máy chủ. Vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
     }
@@ -100,6 +106,7 @@ export default function AuthPage({
       highlight="trở lại"
       subtitle="Đăng nhập để tiếp tục sử dụng Signify."
       backTo="/"
+      pageId="auth-login-page"
     >
       {locationState?.message && (
         <div
@@ -123,7 +130,7 @@ export default function AuthPage({
         </div>
       )}
 
-      <form className="space-y-5" onSubmit={handleSubmit}>
+      <form className="space-y-3.5" onSubmit={handleSubmit}>
         <Input
           id="auth-username-input"
           label="Tên đăng nhập"
@@ -133,9 +140,7 @@ export default function AuthPage({
           value={username}
           onChange={(event) => {
             setUsername(event.target.value);
-            if (fieldErrors.username) {
-              setFieldErrors((prev) => ({ ...prev, username: undefined }));
-            }
+            setFieldErrors((prev) => ({ ...prev, username: event.target.value.trim() ? undefined : prev.username }));
           }}
           onBlur={() => handleBlurField('username')}
           placeholder="Nhập tên đăng nhập của bạn"
@@ -146,19 +151,29 @@ export default function AuthPage({
         <Input
           id="auth-password-input"
           label="Mật khẩu"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           required
           autoComplete="current-password"
           value={password}
           onChange={(event) => {
             setPassword(event.target.value);
-            if (fieldErrors.password) {
-              setFieldErrors((prev) => ({ ...prev, password: undefined }));
-            }
+            setFieldErrors((prev) => ({ ...prev, password: event.target.value ? undefined : prev.password }));
           }}
           onBlur={() => handleBlurField('password')}
           placeholder="••••••••"
           leftIcon={<Lock className="h-4 w-4" />}
+          rightIcon={(
+            <button
+              type="button"
+              aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+              aria-pressed={showPassword}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => setShowPassword((visible) => !visible)}
+              className="flex h-11 w-11 items-center justify-center rounded-md text-brand-text-muted transition-colors hover:text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+            </button>
+          )}
           error={fieldErrors.password}
         />
 
@@ -170,8 +185,9 @@ export default function AuthPage({
             <input
               id="remember-me"
               type="checkbox"
-              defaultChecked
-              className="h-4 w-4 rounded border-brand-border-high text-brand-primary focus:ring-brand-primary"
+              checked={rememberAccount}
+              onChange={(event) => setRememberAccount(event.target.checked)}
+              className="h-5 w-5 rounded border-brand-border-high text-brand-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary focus-visible:ring-offset-2"
             />
 
             Ghi nhớ tài khoản
@@ -180,7 +196,7 @@ export default function AuthPage({
           <button
             type="button"
             onClick={() => navigate('/forgot-password')}
-            className="text-sm font-semibold text-brand-primary hover:text-brand-primary-hover"
+            className="inline-flex min-h-11 items-center rounded px-1 text-sm font-semibold text-brand-primary underline decoration-transparent underline-offset-4 transition-colors hover:text-brand-primary-hover hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
           >
             Quên mật khẩu?
           </button>
@@ -192,6 +208,7 @@ export default function AuthPage({
           fullWidth
           size="lg"
           isLoading={isSubmitting}
+          disabled={isSubmitting}
           leftIcon={<LogIn className="h-4 w-4" />}
         >
           {isSubmitting ? 'Đang đăng nhập' : 'Đăng nhập'}

@@ -62,7 +62,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={Boolean(error)}
             aria-describedby={descriptionId}
             className={[
-              'min-h-11 w-full rounded-lg border bg-white',
+              'min-h-12 w-full rounded-lg border bg-white',
               'px-3 py-2.5 text-sm text-brand-text',
               'placeholder:font-normal placeholder:text-gray-400',
               'transition-colors duration-150',
@@ -91,7 +91,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {error && (
           <p
             id={descriptionId}
-            className="mt-1.5 text-sm text-brand-error"
+            role="alert"
+            className="mt-1.5 min-h-5 text-sm font-medium text-brand-error"
           >
             {error}
           </p>
@@ -105,6 +106,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             {helperText}
           </p>
         )}
+
+        <span className="block min-h-5" aria-hidden="true" />
       </div>
     );
   },

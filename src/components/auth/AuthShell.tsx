@@ -17,6 +17,7 @@ type AuthShellProps = {
   subtitle?: string;
   backTo?: string | null;
   backLabel?: string;
+  pageId?: string;
 };
 
 function SignifyMark({ className = '' }: { className?: string }) {
@@ -279,16 +280,15 @@ export default function AuthShell({
   highlight,
   description,
   subtitle,
-  backTo = '/',
-  backLabel = 'Quay lại',
+  pageId,
 }: AuthShellProps) {
   const supportingText = description ?? subtitle;
 
   return (
-    <main className="min-h-screen bg-brand-bg">
-      <div className="grid min-h-screen lg:grid-cols-[42%_58%]">
+    <main id={pageId} className="min-h-screen bg-brand-bg motion-reduce:[&_*]:!animate-none">
+      <div className="grid min-h-screen md:grid-cols-[40%_60%] md:items-stretch lg:grid-cols-[42%_58%]">
         {/* Khu vực giới thiệu */}
-        <aside className="relative hidden min-h-screen overflow-hidden border-r border-[#bfd3cc] bg-[#dfece7] px-12 py-9 text-brand-text lg:flex lg:flex-col">
+        <aside className="relative hidden min-h-screen overflow-hidden border-r border-[#bfd3cc] bg-[#dfece7] px-7 py-6 text-brand-text md:col-start-1 md:row-start-1 md:flex md:flex-col lg:px-10 lg:py-9 xl:px-12">
           <div className="absolute -left-28 bottom-16 h-72 w-72 rounded-full bg-[#c8ded6]/70" />
 
           <div className="absolute -right-24 top-20 h-64 w-64 rounded-full bg-[#f0cfc3]/65" />
@@ -319,7 +319,7 @@ export default function AuthShell({
             </div>
           </div>
 
-          <div className="relative z-10 my-auto max-w-[510px]">
+          <div className="relative z-10 my-auto w-full max-w-[510px]">
             <RecognitionIllustration />
 
             <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-brand-primary">
@@ -343,7 +343,7 @@ export default function AuthShell({
 
         {/* Khu vực biểu mẫu */}
         <section
-          className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-10 sm:px-8 lg:px-12"
+          className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-6 sm:px-8 sm:py-10 lg:px-12 md:col-start-2 md:row-start-1"
           style={{
             background:
               'linear-gradient(135deg, #e8e3f1 0%, #e2e8ef 52%, #d9e9e4 100%)',
@@ -351,18 +351,9 @@ export default function AuthShell({
         >
           <AuthDecorations />
 
-          <div className="relative z-10 w-full max-w-[500px]">
-            {backTo && (
-              <a
-                href={backTo}
-                className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-brand-muted transition-colors hover:text-brand-primary"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                {backLabel}
-              </a>
-            )}
+          <div className="relative z-10 w-full max-w-[468px]">
 
-            <div className="rounded-2xl border border-[#d6d0df] bg-[#fffcf8] p-7 shadow-[0_22px_55px_rgba(67,63,88,0.16)] sm:p-9">
+            <div className="rounded-2xl border border-[#d6d0df] bg-[#fffcf8] p-5 shadow-[0_22px_55px_rgba(67,63,88,0.16)] sm:p-8 md:p-9">
               <div className="mb-8">
                 <div className="mb-5 flex items-center gap-3 lg:hidden">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-primary text-white">
@@ -374,12 +365,10 @@ export default function AuthShell({
                   </span>
                 </div>
 
-               <h1 className="text-[30px] font-bold leading-tight tracking-[-0.035em] text-brand-text">
-  {title}{' '}
-  {highlight && (
-    <span className="text-brand-primary">{highlight}</span>
-  )}
-</h1>
+                <h1 className="text-[28px] font-bold leading-tight tracking-[-0.035em] text-brand-text sm:text-[30px]">
+                  {title}{' '}
+                  {highlight && <span className="text-brand-primary">{highlight}</span>}
+                </h1>
 
                 {supportingText && (
                   <p className="mt-2 text-sm leading-6 text-brand-muted">
