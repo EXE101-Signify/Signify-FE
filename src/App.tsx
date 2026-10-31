@@ -22,6 +22,7 @@ import ForgotPasswordPage from './components/auth/ForgotPasswordPage';
 import RegisterPage from './components/auth/RegisterPage';
 import ResetPasswordPage from './components/auth/ResetPasswordPage';
 import VerifyOtpPage from './components/auth/VerifyOtpPage';
+import LegalPage from './components/LegalPage';
 import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
 import SettingsPage from './components/settings/SettingsPage';
@@ -516,6 +517,9 @@ export default function App() {
               </PublicRoute>
             }
           />
+
+          <Route path="/terms" element={<LegalPage kind="terms" />} />
+          <Route path="/privacy" element={<LegalPage kind="privacy" />} />
 
           <Route
             path="/forgot-password"
