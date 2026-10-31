@@ -2,13 +2,10 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
-  Globe,
   Search,
   Check,
   UserPlus,
   LoaderCircle,
-  AtSign,
-  Mail,
   UserCheck,
 } from 'lucide-react';
 import { friendApi, type FriendUser } from '../../services/friendApi';
@@ -26,36 +23,21 @@ export default function AddFriendModal({
   onFriendAdded,
 }: AddFriendModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchMode, setSearchMode] = useState<'all' | 'email' | 'username'>('all');
-  const [suggestions, setSuggestions] = useState<FriendUser[]>([]);
   const [searchResults, setSearchResults] = useState<FriendUser[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [pendingSentIds, setPendingSentIds] = useState<Set<number>>(new Set());
-  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
-  // Load suggestions when modal opens
+  // Reset search when the modal opens.
   useEffect(() => {
     if (isOpen) {
       setSearchQuery('');
       setSearchResults(null);
       setActionNotice(null);
-      loadSuggestions();
+      setSearchError(null);
     }
   }, [isOpen]);
-
-  const loadSuggestions = async () => {
-    setLoadingSuggestions(true);
-    try {
-      const list = await friendApi.getSuggestions();
-      setSuggestions(list);
-    } catch {
-      // fallback
-    } finally {
-      setLoadingSuggestions(false);
-    }
-  };
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -66,12 +48,12 @@ export default function AddFriendModal({
 
     setSearching(true);
     setActionNotice(null);
+    setSearchError(null);
     try {
       const results = await friendApi.searchUsers(searchQuery);
       setSearchResults(results);
     } catch (err) {
-      console.error(err);
-      setSearchResults([]);
+      setSearchError(err instanceof Error ? err.message : 'Không thể tìm kiếm người dùng.');
     } finally {
       setSearching(false);
     }
@@ -79,22 +61,15 @@ export default function AddFriendModal({
 
   const handleSendRequest = async (user: FriendUser) => {
     try {
-      await friendApi.sendFriendRequest(user);
-      setPendingSentIds((prev) => new Set(prev).add(user.userId));
-      setActionNotice(`Đã gửi lời mời kết bạn tới ${user.fullName}`);
+      const status = await friendApi.sendFriendRequest(user);
+      if (status === 'SENT') setPendingSentIds((prev) => new Set(prev).add(user.userId));
+      setActionNotice(status === 'FRIEND' ? `Đã kết bạn với ${user.fullName}` : `Đã gửi lời mời kết bạn tới ${user.fullName}`);
       setTimeout(() => setActionNotice(null), 3500);
-
-      // Refresh suggestions status
-      setSuggestions((prev) =>
-        prev.map((s) =>
-          s.userId === user.userId ? { ...s, requestStatus: 'SENT' } : s
-        )
-      );
 
       if (searchResults) {
         setSearchResults((prev) =>
           (prev ?? []).map((u) =>
-            u.userId === user.userId ? { ...u, requestStatus: 'SENT' } : u
+            u.userId === user.userId ? { ...u, requestStatus: status === 'SENT' ? 'SENT' : 'NONE', isFriend: status === 'FRIEND' } : u
           )
         );
       }
@@ -106,10 +81,6 @@ export default function AddFriendModal({
   };
 
   if (!isOpen) return null;
-
-  const displayedSuggestions = showAllSuggestions
-    ? suggestions
-    : suggestions.slice(0, 3);
 
   return (
     <AnimatePresence>
@@ -153,33 +124,7 @@ export default function AddFriendModal({
             {/* Search Input Box */}
             <form onSubmit={handleSearch} className="space-y-3">
               <div className="relative flex items-center rounded-xl border border-[#393e48] bg-[#181a1e] px-3.5 py-1.5 focus-within:border-[#0068ff] focus-within:ring-2 focus-within:ring-[#0068ff]/20 transition-all">
-                {/* Search Type Badge */}
-                <div className="flex items-center gap-1.5 border-r border-[#343942] pr-3 text-xs font-semibold text-gray-300">
-                  <span className="flex items-center gap-1 text-[#0068ff]">
-                    {searchMode === 'email' ? (
-                      <Mail className="h-4 w-4" />
-                    ) : searchMode === 'username' ? (
-                      <AtSign className="h-4 w-4" />
-                    ) : (
-                      <Search className="h-4 w-4" />
-                    )}
-                  </span>
-                  <select
-                    value={searchMode}
-                    onChange={(e) => setSearchMode(e.target.value as any)}
-                    className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer"
-                  >
-                    <option value="all" className="bg-[#20242a] text-white">
-                      Email / Username
-                    </option>
-                    <option value="email" className="bg-[#20242a] text-white">
-                      Email
-                    </option>
-                    <option value="username" className="bg-[#20242a] text-white">
-                      Username
-                    </option>
-                  </select>
-                </div>
+                <Search className="h-4 w-4 shrink-0 text-[#60a5fa]" aria-hidden="true" />
 
                 {/* Input */}
                 <input
@@ -189,13 +134,8 @@ export default function AddFriendModal({
                     setSearchQuery(e.target.value);
                     if (!e.target.value.trim()) setSearchResults(null);
                   }}
-                  placeholder={
-                    searchMode === 'email'
-                      ? 'Nhập địa chỉ email...'
-                      : searchMode === 'username'
-                      ? 'Nhập username...'
-                      : 'Nhập email hoặc username...'
-                  }
+                  placeholder="Nhập email hoặc username..."
+                  maxLength={150}
                   autoFocus
                   className="w-full bg-transparent px-3 py-2 text-sm text-white placeholder-gray-500 outline-none"
                 />
@@ -234,6 +174,8 @@ export default function AddFriendModal({
                   <LoaderCircle className="h-7 w-7 animate-spin text-[#0068ff]" />
                   <p className="mt-2 text-xs">Đang tìm kiếm người dùng…</p>
                 </div>
+              ) : searchError ? (
+                <div role="alert" className="rounded-xl border border-red-300 p-4 text-sm text-red-300">{searchError}</div>
               ) : searchResults !== null ? (
                 /* Search Results View */
                 <div>
@@ -303,7 +245,7 @@ export default function AddFriendModal({
                                   className="inline-flex items-center gap-1.5 rounded-lg border border-[#0068ff] bg-transparent px-3.5 py-1.5 text-xs font-bold text-[#0068ff] hover:bg-[#0068ff] hover:text-white transition-all shadow-xs"
                                 >
                                   <UserPlus className="h-3.5 w-3.5" />
-                                  Kết bạn
+                                  {user.requestStatus === 'RECEIVED' ? 'Chấp nhận' : 'Kết bạn'}
                                 </button>
                               )}
                             </div>
@@ -314,78 +256,8 @@ export default function AddFriendModal({
                   )}
                 </div>
               ) : (
-                /* Suggestions View ("Có thể bạn quen") - Exactly like Image 1 */
-                <div>
-                  <div className="mb-3.5 flex items-center gap-2 text-xs font-semibold text-gray-300">
-                    <Globe className="h-4 w-4 text-[#0068ff]" />
-                    <span>Có thể bạn quen</span>
-                  </div>
-
-                  {loadingSuggestions ? (
-                    <div className="flex justify-center py-8">
-                      <LoaderCircle className="h-6 w-6 animate-spin text-[#0068ff]" />
-                    </div>
-                  ) : suggestions.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-gray-500">No data</p>
-                  ) : (
-                    <div className="space-y-3.5">
-                      {displayedSuggestions.map((user) => {
-                        const isPending =
-                          user.requestStatus === 'SENT' ||
-                          pendingSentIds.has(user.userId);
-                        return (
-                          <div
-                            key={user.id || user.userId}
-                            className="flex items-center justify-between py-1"
-                          >
-                            <div className="flex items-center gap-3">
-                              <Avatar src={user.avatar} name={user.fullName} size="sm" />
-                              <div>
-                                <h4 className="text-sm font-bold text-white">
-                                  {user.fullName}
-                                </h4>
-                    <p className="text-xs text-gray-400">{user.sourceHint || 'No data'}</p>
-                              </div>
-                            </div>
-
-                            <div>
-                              {user.isFriend ? (
-                                <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-400 border border-emerald-500/30">
-                                  <UserCheck className="h-3.5 w-3.5" />
-                                  Bạn bè
-                                </span>
-                              ) : isPending ? (
-                                <span className="inline-flex items-center gap-1 rounded-lg bg-gray-700/60 px-3 py-1.5 text-xs font-semibold text-gray-300">
-                                  <Check className="h-3.5 w-3.5 text-[#60a5fa]" />
-                                  Đã gửi
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSendRequest(user)}
-                                  className="rounded-lg border border-[#0068ff] px-4 py-1.5 text-xs font-bold text-[#0068ff] hover:bg-[#0068ff] hover:text-white transition-all"
-                                >
-                                  Kết bạn
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {suggestions.length > 3 && !showAllSuggestions && (
-                        <div className="pt-1">
-                          <button
-                            type="button"
-                            onClick={() => setShowAllSuggestions(true)}
-                            className="text-xs font-semibold text-[#0068ff] hover:underline"
-                          >
-                            Xem thêm
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                <div className="flex min-h-[180px] items-center justify-center px-4 text-center text-sm text-gray-400">
+                  Nhập email hoặc username rồi chọn Tìm kiếm để kết bạn.
                 </div>
               )}
             </div>

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -36,6 +37,9 @@ import type {
 
 interface ChatPanelProps {
   conversation: ChatConversationItem;
+  active: boolean;
+  draft: string;
+  onDraftChange: (value: string) => void;
   onSend: (content: string) => Promise<void>;
   onEditMessage: (messageId: string, content: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
@@ -74,6 +78,9 @@ function reactionEmoji(type: ChatReactionType) {
 
 export default function ChatPanel({
   conversation,
+  active,
+  draft,
+  onDraftChange,
   onSend,
   onEditMessage,
   onDeleteMessage,
@@ -91,7 +98,39 @@ export default function ChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimerRef = useRef<number | null>(null);
   const typingActiveRef = useRef(false);
-  const [draft, setDraft] = useState('');
+  const messageViewportRef = useRef<HTMLDivElement>(null);
+  const scrollPositionsRef = useRef<Record<string, number>>({});
+  const pendingOlderRef = useRef<{ id: string; height: number; top: number } | null>(null);
+  const lastMessageCountRef = useRef<Record<string, number>>({});
+  const previousConversationRef = useRef(conversation.id);
+  const wasActiveRef = useRef(active);
+
+  useLayoutEffect(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport) return;
+    const previousId = previousConversationRef.current;
+    if (previousId !== conversation.id || (!wasActiveRef.current && active)) {
+      if (active) viewport.scrollTop = scrollPositionsRef.current[conversation.id] ?? viewport.scrollHeight;
+    }
+    previousConversationRef.current = conversation.id;
+    wasActiveRef.current = active;
+  }, [conversation.id, active]);
+
+  useLayoutEffect(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport || !active) return;
+    const previousCount = lastMessageCountRef.current[conversation.id] ?? 0;
+    const nextCount = conversation.messages.length;
+    const pending = pendingOlderRef.current;
+    if (pending?.id === conversation.id && nextCount > previousCount) {
+      viewport.scrollTop = pending.top + viewport.scrollHeight - pending.height;
+      pendingOlderRef.current = null;
+    } else if (previousCount === 0 && nextCount > 0 && (scrollPositionsRef.current[conversation.id] ?? 0) === 0) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+    lastMessageCountRef.current[conversation.id] = nextCount;
+    scrollPositionsRef.current[conversation.id] = viewport.scrollTop;
+  }, [conversation.id, conversation.messages.length, active]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [actionMessageId, setActionMessageId] = useState<string | null>(null);
@@ -132,9 +171,11 @@ export default function ChatPanel({
   };
 
   const loadOlder = async () => {
+    const viewport = messageViewportRef.current;
+    if (viewport) pendingOlderRef.current = { id: conversation.id, height: viewport.scrollHeight, top: viewport.scrollTop };
     setLoadingOlder(true);
     try { await onLoadOlder(); }
-    catch (error) { reportError(error, 'Không thể tải tin nhắn cũ hơn.'); }
+    catch (error) { pendingOlderRef.current = null; reportError(error, 'Không thể tải tin nhắn cũ hơn.'); }
     finally { setLoadingOlder(false); }
   };
 
@@ -148,7 +189,7 @@ export default function ChatPanel({
   };
 
   const updateDraft = (value: string) => {
-    setDraft(value);
+    onDraftChange(value);
     if (!value.trim()) {
       stopTyping();
       return;
@@ -170,7 +211,7 @@ export default function ChatPanel({
       if (pendingFile) await onSendAttachment(pendingFile, content);
       else await onSend(content);
       stopTyping();
-      setDraft('');
+      onDraftChange('');
       setPendingFile(null);
       setShowEmoji(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -275,7 +316,7 @@ export default function ChatPanel({
         </div>
       </header>
 
-      <div className="signify-chat-pattern relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-7">
+      <div ref={messageViewportRef} onScroll={(event) => { scrollPositionsRef.current[conversation.id] = event.currentTarget.scrollTop; }} className="signify-chat-pattern relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-6 sm:py-7">
         <span className="pointer-events-none absolute -left-20 top-12 h-64 w-64 rounded-full bg-[#d9ebe5]/45 blur-2xl" />
         <span className="pointer-events-none absolute -right-20 bottom-10 h-72 w-72 rounded-full bg-[#ead7e5]/35 blur-2xl" />
         <div className="relative mx-auto w-full max-w-none px-1 lg:max-w-[1200px] lg:px-3">

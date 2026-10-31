@@ -11,7 +11,7 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { ArrowLeft, Home, LoaderCircle, Phone, PhoneOff } from 'lucide-react';
 
 import AuthPage from './components/AuthPage';
@@ -466,8 +466,7 @@ export default function App() {
       id="applet-viewport-root"
       className="min-h-screen overflow-x-hidden bg-brand-bg"
     >
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
+        <Routes>
           <Route
             path="/"
             element={
@@ -563,17 +562,10 @@ export default function App() {
           />
 
           <Route
-            path="/dashboard"
             element={
               <ProtectedRoute
                 authStatus={authStatus}
               >
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
                   <Dashboard
                     onNavigate={handleNavigate}
                     onLogout={handleLogout}
@@ -581,10 +573,12 @@ export default function App() {
                     callCreating={callCreating}
                     callError={callError}
                   />
-                </motion.div>
               </ProtectedRoute>
             }
-          />
+          >
+            <Route path="dashboard" element={null} />
+            <Route path="friends" element={null} />
+          </Route>
 
           <Route
             path="/profile"
@@ -657,28 +651,6 @@ export default function App() {
           />
 
           <Route
-            path="/friends"
-            element={
-              <ProtectedRoute authStatus={authStatus}>
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Dashboard
-                    onNavigate={handleNavigate}
-                    onLogout={handleLogout}
-                    onStartCall={handleStartCall}
-                    callCreating={callCreating}
-                    callError={callError}
-                  />
-                </motion.div>
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
             path="/call"
             element={
               <ProtectedRoute
@@ -745,7 +717,6 @@ export default function App() {
 
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
-      </AnimatePresence>
       {isAuthenticated && incomingError && !pendingCall && (
         <div role="alert" className="fixed bottom-4 right-4 z-50 rounded-xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800 shadow-xl">{incomingError}</div>
       )}

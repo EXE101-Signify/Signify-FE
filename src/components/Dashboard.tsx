@@ -18,7 +18,7 @@ import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
 import AddFriendModal from './friends/AddFriendModal';
 import FriendListPage from './friends/FriendListPage';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import type {
   ChatAttachmentItem,
   ChatConversationItem,
@@ -175,11 +175,14 @@ function validId(value: string): number {
 }
 
 export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreating, callError }: DashboardProps) {
-  const contactsMode = useLocation().pathname === '/friends';
+  const location = useLocation();
+  const navigate = useNavigate();
+  const contactsMode = location.pathname === '/friends';
   const currentUserId = getStoredUser()?.userId;
   const [currentUser, setCurrentUser] = useState<UserDTO | null>(() => getStoredUser());
   const [conversations, setConversations] = useState<DashboardConversation[]>([]);
   const [activeId, setActiveId] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -188,12 +191,15 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<number>>(new Set());
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
+  const [friendRefreshVersion, setFriendRefreshVersion] = useState(0);
   const [contactsTab, setContactsTab] = useState<'friends' | 'requests'>('friends');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const activeIdRef = useRef(activeId);
+  const contactsModeRef = useRef(contactsMode);
   const seenEventIds = useRef(new Set<string>());
 
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { contactsModeRef.current = contactsMode; }, [contactsMode]);
 
   useEffect(() => {
     let active = true;
@@ -239,7 +245,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
           .map((item) => mapConversation(item, currentUserId))
           .filter((item): item is DashboardConversation => item !== null);
         setConversations(mapped);
-        setActiveId(mapped[0]?.id ?? '');
+        setActiveId((previous) => mapped.some((item) => item.id === previous) ? previous : mapped[0]?.id ?? '');
         setBlockedUserIds(new Set(blocked.map((item) => item.userId)));
         setConversationsError(null);
 
@@ -274,6 +280,32 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
   }, [currentUserId]);
 
   const activeConversation = conversations.find((item) => item.id === activeId);
+
+  useEffect(() => {
+    const targetId = (location.state as { conversationId?: unknown } | null)?.conversationId;
+    if (contactsMode || loadingConversations || !Number.isSafeInteger(targetId) || Number(targetId) <= 0) return;
+    const id = Number(targetId);
+    const existing = conversations.find((item) => item.conversationId === id);
+    if (existing) {
+      setActiveId(existing.id);
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
+    let active = true;
+    void conversationApi.list().then((items) => {
+      if (!active) return;
+      const mapped = items.map((item) => mapConversation(item, currentUserId))
+        .filter((item): item is DashboardConversation => item !== null);
+      setConversations((current) => mapped.map((item) => current.find((saved) => saved.id === item.id) ?? item));
+      const target = mapped.find((item) => item.conversationId === id);
+      if (target) setActiveId(target.id);
+      else showNotice('Không tìm thấy cuộc trò chuyện với người bạn này.');
+      navigate(location.pathname, { replace: true, state: null });
+    }).catch(() => {
+      if (active) showNotice('Không thể mở cuộc trò chuyện.');
+    });
+    return () => { active = false; };
+  }, [location.state, location.pathname, contactsMode, loadingConversations, conversations, currentUserId, navigate, showNotice]);
 
   useEffect(() => {
     if (!activeConversation || activeConversation.type !== 'PRIVATE'
@@ -355,7 +387,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
             }, currentUserId);
             message.attachments = attachments;
             upsertMessage(conversationId, message);
-            const isActive = activeIdRef.current === `conversation-${conversationId}`;
+            const isActive = !contactsModeRef.current && activeIdRef.current === `conversation-${conversationId}`;
             if (event.senderId !== currentUserId && isActive) {
               void conversationApi.markRead(conversationId, event.messageId!).catch(() => {});
             } else if (event.senderId !== currentUserId) {
@@ -639,33 +671,8 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
           </button>
         </div>
       </nav>
-      {contactsMode ? (
-        <div className="flex min-w-0 flex-1 flex-col md:flex-row">
-          <aside className="shrink-0 border-b border-[#dce9e5] bg-white px-3 py-3 md:w-[260px] md:border-b-0 md:border-r md:p-4" aria-label="Điều hướng danh bạ">
-            <h2 className="mb-2 hidden text-lg font-bold text-[#233531] md:block">Danh bạ</h2>
-            <nav className="flex gap-2 md:flex-col" aria-label="Mục danh bạ">
-              {([
-                { id: 'friends', label: 'Danh sách bạn bè', icon: Users },
-                { id: 'requests', label: 'Lời mời kết bạn', icon: Inbox },
-              ] as const).map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setContactsTab(id)}
-                  aria-current={contactsTab === id ? 'page' : undefined}
-                  className={`flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3e8077] md:w-full ${contactsTab === id ? 'bg-[#e2f1eb] text-[#306b63]' : 'text-[#647a79] hover:bg-[#f7faf9] hover:text-[#233531]'}`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </nav>
-          </aside>
-          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            <FriendListPage activeTab={contactsTab} onNavigate={onNavigate} onLogout={onLogout} />
-          </section>
-        </div>
-      ) : <><ConversationList
+      <div className={`${contactsMode ? 'hidden' : 'flex'} min-w-0 flex-1`}>
+      <ConversationList
         conversations={visibleConversations}
         activeId={activeId}
         searchQuery={searchQuery}
@@ -680,6 +687,9 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
         <>
           <ChatPanel
             conversation={activeConversation}
+            active={!contactsMode}
+            draft={drafts[activeConversation.id] ?? ''}
+            onDraftChange={(value) => setDrafts((current) => ({ ...current, [activeConversation.id]: value }))}
             onSend={sendMessage}
             onEditMessage={editMessage}
             onDeleteMessage={deleteMessage}
@@ -710,7 +720,33 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
             <h2 className="text-lg font-extrabold text-[#263934]">{loadingConversations ? 'Đang tải cuộc trò chuyện…' : conversationsError || 'No data'}</h2>
           </div>
         </section>
-      )}</>}
+      )}
+      </div>
+      <div className={`${contactsMode ? 'flex' : 'hidden'} min-w-0 flex-1 flex-col md:flex-row`}>
+          <aside className="shrink-0 border-b border-[#dce9e5] bg-white px-3 py-3 md:w-[260px] md:border-b-0 md:border-r md:p-4" aria-label="Điều hướng danh bạ">
+            <h2 className="mb-2 hidden text-lg font-bold text-[#233531] md:block">Danh bạ</h2>
+            <nav className="flex gap-2 md:flex-col" aria-label="Mục danh bạ">
+              {([
+                { id: 'friends', label: 'Danh sách bạn bè', icon: Users },
+                { id: 'requests', label: 'Lời mời kết bạn', icon: Inbox },
+              ] as const).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setContactsTab(id)}
+                  aria-current={contactsTab === id ? 'page' : undefined}
+                  className={`flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3e8077] md:w-full ${contactsTab === id ? 'bg-[#e2f1eb] text-[#306b63]' : 'text-[#647a79] hover:bg-[#f7faf9] hover:text-[#233531]'}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <FriendListPage activeTab={contactsTab} refreshVersion={friendRefreshVersion} onNavigate={onNavigate} onLogout={onLogout} />
+          </section>
+      </div>
 
       {(conversationsError || callError) && (
         <div role="alert" className="absolute bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-800 shadow-xl">
@@ -729,7 +765,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
       <AddFriendModal
         isOpen={isAddFriendModalOpen}
         onClose={() => setIsAddFriendModalOpen(false)}
-        onFriendAdded={() => showNotice('Đã gửi lời mời kết bạn thành công.')}
+        onFriendAdded={() => { setFriendRefreshVersion((version) => version + 1); showNotice('Đã cập nhật danh bạ.'); }}
       />
     </main>
   );

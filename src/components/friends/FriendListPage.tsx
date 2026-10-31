@@ -33,12 +33,14 @@ interface FriendListPageProps {
   onNavigate?: (screen: Screen) => void;
   onLogout?: () => void;
   activeTab: 'friends' | 'requests';
+  refreshVersion?: number;
 }
 
 export default function FriendListPage({
   onNavigate,
   onLogout,
   activeTab,
+  refreshVersion = 0,
 }: FriendListPageProps) {
   const navigate = useNavigate();
 
@@ -100,7 +102,7 @@ export default function FriendListPage({
   useEffect(() => {
     loadFriends();
     loadRequests();
-  }, [sortOrder]);
+  }, [sortOrder, refreshVersion]);
 
   // Filtered friends
   const filteredFriends = useMemo(() => {
@@ -195,22 +197,18 @@ export default function FriendListPage({
   const handleStartChat = async (friend: FriendUser) => {
     try {
       // Try to find or create conversation
-      const convos = await conversationApi.list().catch(() => []);
+      const convos = await conversationApi.list();
       const existing = convos.find((c) =>
         c.type === 'PRIVATE' && c.participants.some((p) => p.userId === friend.userId)
       );
       if (existing) {
         navigate('/dashboard', { state: { conversationId: existing.conversationId } });
       } else {
-        const created = await conversationApi.create('PRIVATE', [friend.userId]).catch(() => null);
-        if (created) {
-          navigate('/dashboard', { state: { conversationId: created.conversationId } });
-        } else {
-          navigate('/dashboard');
-        }
+        const created = await conversationApi.create('PRIVATE', [friend.userId]);
+        navigate('/dashboard', { state: { conversationId: created.conversationId } });
       }
-    } catch {
-      navigate('/dashboard');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Không thể mở cuộc trò chuyện.', 'error');
     }
   };
 
@@ -237,6 +235,13 @@ export default function FriendListPage({
             </div>
           )}
 
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <h1 className="text-lg font-bold text-[#233531]">{activeTab === 'friends' ? 'Danh sách bạn bè' : 'Lời mời kết bạn'}</h1>
+            <button type="button" onClick={() => setIsAddModalOpen(true)} className="inline-flex items-center gap-2 rounded-xl bg-[#3e8077] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#306b63] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3e8077]">
+              <UserPlus className="h-4 w-4" aria-hidden="true" />Thêm bạn
+            </button>
+          </div>
+
           {/* TAB 1: Danh sách bạn bè (Matching Image 2) */}
           {activeTab === 'friends' && (
             <div className="space-y-4">
@@ -250,7 +255,7 @@ export default function FriendListPage({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Tìm bạn theo tên, email hoặc username"
+                    placeholder="Tìm bạn theo tên hoặc username"
                     className="w-full rounded-xl border border-[#dce9e5] bg-white py-2.5 pl-10 pr-4 text-xs font-semibold text-[#233531] placeholder:text-[#879991] outline-none focus:border-[#3e8077] focus:ring-2 focus:ring-[#3e8077]/20 transition-all"
                   />
                   {searchQuery && (

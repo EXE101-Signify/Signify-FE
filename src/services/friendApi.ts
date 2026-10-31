@@ -26,7 +26,7 @@ export interface FriendRequest {
   createdAt: string;
 }
 
-interface Page<T> { content: T[]; }
+interface Page<T> { content: T[]; totalPages: number; }
 interface ApiFriendUser { userId: number; username: string; fullName: string; avatar?: string | null; }
 interface ApiFriend { relationshipId: number; user: ApiFriendUser; friendsSince: number; }
 interface ApiFriendRequest { requestId: number; user: ApiFriendUser; createdAt: number; }
@@ -51,24 +51,33 @@ function mapRequest(request: ApiFriendRequest, direction: 'incoming' | 'outgoing
   };
 }
 
-async function page<T>(path: string): Promise<T[]> {
-  const response = await apiFetch<Page<T>>(path);
-  return response.data?.content ?? [];
+async function allPages<T>(path: string): Promise<T[]> {
+  const rows: T[] = [];
+  let index = 0;
+  let totalPages = 1;
+  do {
+    const separator = path.includes('?') ? '&' : '?';
+    const response = await apiFetch<Page<T>>(`${path}${separator}page=${index}&size=100`);
+    if (!response.data) throw new Error('Máy chủ không trả về dữ liệu danh bạ.');
+    rows.push(...response.data.content);
+    totalPages = response.data.totalPages;
+    index += 1;
+  } while (index < totalPages);
+  return rows;
 }
 
 export const friendApi = {
   async getFriends(query = '', sort: 'asc' | 'desc' = 'asc'): Promise<FriendUser[]> {
-    const rows = await page<ApiFriend>('/api/friends?page=0&size=100');
+    const rows = await allPages<ApiFriend>('/api/friends');
     const needle = query.trim().toLocaleLowerCase();
     return rows.map((row) => mapUser(row.user))
       .filter((user) => !needle || user.fullName.toLocaleLowerCase().includes(needle) || user.username.toLocaleLowerCase().includes(needle))
       .sort((a, b) => (sort === 'asc' ? 1 : -1) * a.fullName.localeCompare(b.fullName, 'vi', { sensitivity: 'base' }));
   },
-  async getSuggestions(): Promise<FriendUser[]> { return []; },
   async searchUsers(query: string): Promise<FriendUser[]> {
     const needle = query.trim();
     if (!needle) return [];
-    const rows = await page<ApiSearchUser>(`/api/friends/search?q=${encodeURIComponent(needle)}&page=0&size=20`);
+    const rows = await allPages<ApiSearchUser>(`/api/friends/search?q=${encodeURIComponent(needle)}`);
     return rows.map((user) => ({
       ...mapUser(user), isFriend: user.relationshipStatus === 'FRIEND',
       requestStatus: user.relationshipStatus === 'OUTGOING_PENDING' ? 'SENT' : user.relationshipStatus === 'INCOMING_PENDING' ? 'RECEIVED' : 'NONE',
@@ -76,16 +85,17 @@ export const friendApi = {
   },
   async getFriendRequests(): Promise<{ received: FriendRequest[]; sent: FriendRequest[] }> {
     const [received, sent] = await Promise.all([
-      page<ApiFriendRequest>('/api/friends/requests/incoming?page=0&size=100'),
-      page<ApiFriendRequest>('/api/friends/requests/outgoing?page=0&size=100'),
+      allPages<ApiFriendRequest>('/api/friends/requests/incoming'),
+      allPages<ApiFriendRequest>('/api/friends/requests/outgoing'),
     ]);
     return {
       received: received.map((item) => mapRequest(item, 'incoming')),
       sent: sent.map((item) => mapRequest(item, 'outgoing')),
     };
   },
-  async sendFriendRequest(targetUser: FriendUser): Promise<void> {
-    await apiFetch(`/api/friends/requests/${targetUser.userId}`, { method: 'POST' });
+  async sendFriendRequest(targetUser: FriendUser): Promise<'SENT' | 'FRIEND'> {
+    const response = await apiFetch<{ status: 'OUTGOING_PENDING' | 'FRIEND' }>(`/api/friends/requests/${targetUser.userId}`, { method: 'POST' });
+    return response.data?.status === 'FRIEND' ? 'FRIEND' : 'SENT';
   },
   async acceptFriendRequest(requestId: string): Promise<void> {
     await apiFetch(`/api/friends/requests/${encodeURIComponent(requestId)}/accept`, { method: 'POST' });
