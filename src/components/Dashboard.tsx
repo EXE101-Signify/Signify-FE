@@ -607,10 +607,10 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
           {currentUser?.avatar ? <img src={currentUser.avatar} alt="Ảnh đại diện" className="h-full w-full object-cover" /> : <span className="text-[9px] font-bold">{currentUser ? (currentUser.firstName?.[0] || currentUser.username?.[0] || '—').toUpperCase() : 'No data'}</span>}
         </div>
         <div className="mt-4 flex flex-col items-center gap-2">
-          <button type="button" onClick={() => onNavigate('dashboard')} title="Tin nhắn" aria-label="Tin nhắn" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-primary-light text-brand-primary transition hover:bg-brand-primary hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+          <button type="button" onClick={() => onNavigate('dashboard')} aria-label="Tin nhắn" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-primary-light text-brand-primary transition hover:bg-brand-primary hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
             <MessageCircle className="h-5 w-5" aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => onNavigate('friends')} title="Danh sách bạn bè" aria-label="Danh sách bạn bè" className="flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+          <button type="button" onClick={() => onNavigate('friends')} aria-label="Danh sách bạn bè" className="flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
             <Users className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
