@@ -19,7 +19,6 @@ import {
   Inbox,
   Send,
 } from 'lucide-react';
-import AppLayout from '../../layouts/AppLayout';
 import type { Screen } from '../../types';
 import AddFriendModal from './AddFriendModal';
 import Avatar from '../common/Avatar';
@@ -33,16 +32,17 @@ import { conversationApi } from '../../services/conversationApi';
 interface FriendListPageProps {
   onNavigate?: (screen: Screen) => void;
   onLogout?: () => void;
+  activeTab: 'friends' | 'requests';
 }
 
 export default function FriendListPage({
   onNavigate,
   onLogout,
+  activeTab,
 }: FriendListPageProps) {
   const navigate = useNavigate();
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<'friends' | 'requests'>('friends');
   const [requestSubTab, setRequestSubTab] = useState<'received' | 'sent'>('received');
 
   // Friends data
@@ -215,78 +215,17 @@ export default function FriendListPage({
   };
 
   return (
-    <AppLayout
-      activeScreen="friends"
-      title={
-        <div className="flex items-center gap-2.5">
-          <Users className="h-6 w-6 text-brand-primary" />
-          <span>Danh bạ & Bạn bè</span>
-        </div>
-      }
-      subtitle="Quản lý danh sách bạn bè, tìm kiếm theo email / username và xử lý lời mời kết bạn"
-      onNavigate={onNavigate}
-      onLogout={onLogout}
-    >
+    <>
       {/* Container - Styled closely matching Zalo dark contact page in Image 2 */}
-      <div className="min-h-[calc(100vh-80px)] bg-[#18191c] p-6 text-[#e1e4ea]">
+      <div className="min-h-[calc(100vh-80px)] bg-[#f7faf9] p-6 text-[#233531]">
         <div className="mx-auto max-w-6xl">
-          {/* Top Bar with Tabs and Add Friend Button */}
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-[#282a2e] pb-4">
-            {/* Tabs */}
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab('friends')}
-                className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
-                  activeTab === 'friends'
-                    ? 'bg-[#2b2e34] text-white shadow-sm border border-[#3b3f46]'
-                    : 'text-gray-400 hover:bg-[#202226] hover:text-gray-200'
-                }`}
-              >
-                <Users className="h-4 w-4 text-[#0068ff]" />
-                <span>Danh sách bạn bè</span>
-                <span className="rounded-full bg-[#1b1c20] px-2 py-0.5 text-xs text-gray-300 border border-[#32353b]">
-                  {friends.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab('requests')}
-                className={`relative flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
-                  activeTab === 'requests'
-                    ? 'bg-[#2b2e34] text-white shadow-sm border border-[#3b3f46]'
-                    : 'text-gray-400 hover:bg-[#202226] hover:text-gray-200'
-                }`}
-              >
-                <Inbox className="h-4 w-4 text-[#0068ff]" />
-                <span>Lời mời kết bạn</span>
-                {receivedRequests.length > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[11px] font-extrabold text-white">
-                    {receivedRequests.length}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Action button "Thêm bạn" - Exactly like Image 1 trigger */}
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2 rounded-xl bg-[#0068ff] px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-[#0068ff]/25 hover:bg-[#0057d9] transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>Thêm bạn</span>
-            </button>
-          </div>
-
           {/* Toast Notification */}
           {feedbackNotice && (
             <div
               className={`mb-4 flex items-center gap-2.5 rounded-xl border p-3.5 text-sm font-semibold shadow-lg ${
                 feedbackNotice.type === 'success'
-                  ? 'border-emerald-500/30 bg-emerald-950/40 text-emerald-400'
-                  : 'border-rose-500/30 bg-rose-950/40 text-rose-400'
+                  ? 'border-[#b7d8ce] bg-[#e2f1eb] text-[#306b63]'
+                  : 'border-[#efc9c1] bg-[#fff4f1] text-[#a34e40]'
               }`}
             >
               {feedbackNotice.type === 'success' ? (
@@ -301,30 +240,24 @@ export default function FriendListPage({
           {/* TAB 1: Danh sách bạn bè (Matching Image 2) */}
           {activeTab === 'friends' && (
             <div className="space-y-4">
-              {/* Header: Bạn bè (count) - Exactly from Image 2 */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-300">
-                  Bạn bè ({friends.length})
-                </h3>
-              </div>
 
               {/* Filter / Search Toolbar (Image 2) */}
               <div className="flex flex-wrap items-center gap-3">
                 {/* Search input: "Tìm bạn" */}
-                <div className="relative min-w-[280px] flex-1">
-                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <div className="relative min-w-0 flex-1 basis-full sm:basis-[280px]">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#647a79]" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Tìm bạn theo tên, email hoặc username"
-                    className="w-full rounded-xl border border-[#2b2e34] bg-[#202226] py-2.5 pl-10 pr-4 text-xs font-semibold text-white placeholder-gray-500 outline-none focus:border-[#0068ff] focus:ring-2 focus:ring-[#0068ff]/20 transition-all"
+                    className="w-full rounded-xl border border-[#dce9e5] bg-white py-2.5 pl-10 pr-4 text-xs font-semibold text-[#233531] placeholder:text-[#879991] outline-none focus:border-[#3e8077] focus:ring-2 focus:ring-[#3e8077]/20 transition-all"
                   />
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#647a79] hover:text-[#233531]"
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -332,17 +265,17 @@ export default function FriendListPage({
                 </div>
 
                 {/* Sort dropdown: "Tên (A-Z)" */}
-                <div className="relative flex items-center rounded-xl border border-[#2b2e34] bg-[#202226] px-3 py-2 text-xs font-semibold text-gray-300">
-                  <ArrowUpDown className="mr-2 h-3.5 w-3.5 text-gray-400" />
+                <div className="relative flex items-center rounded-xl border border-[#dce9e5] bg-white px-3 py-2 text-xs font-semibold text-[#647a79]">
+                  <ArrowUpDown className="mr-2 h-3.5 w-3.5 text-[#647a79]" />
                   <select
                     value={sortOrder}
                     onChange={(e) => setSortOrder(e.target.value as any)}
-                    className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer"
+                    className="bg-transparent text-xs text-[#233531] outline-none cursor-pointer"
                   >
-                    <option value="asc" className="bg-[#202226] text-white">
+                    <option value="asc" className="bg-white text-[#233531]">
                       Tên (A-Z)
                     </option>
-                    <option value="desc" className="bg-[#202226] text-white">
+                    <option value="desc" className="bg-white text-[#233531]">
                       Tên (Z-A)
                     </option>
                   </select>
@@ -351,21 +284,19 @@ export default function FriendListPage({
               </div>
 
               {/* Grouped Alphabetical Friend List (Image 2: A, B, C...) */}
-              <div className="mt-4 rounded-2xl border border-[#23252a] bg-[#1a1c20] p-4 shadow-sm">
+              <div className="mt-4 rounded-2xl border border-[#dce9e5] bg-white p-4 shadow-sm">
                 {loadingFriends ? (
-                  <div className="py-20 text-center text-gray-400 text-sm">
-                    Đang tải danh sách bạn bè…
-                  </div>
+                  <div className="space-y-3 py-3" aria-label="Đang tải danh sách bạn bè">{[1,2,3].map((item) => <div key={item} className="flex animate-pulse items-center gap-3 px-3 py-2"><span className="h-11 w-11 rounded-full bg-[#e2f1eb]" /><span className="h-4 w-40 rounded bg-[#e2f1eb]" /></div>)}</div>
                 ) : groupedFriends.length === 0 ? (
-                  <div className="py-16 text-center text-gray-400">
-                    <p className="text-sm font-semibold">No data</p>
+                  <div className="py-8 text-center text-[#647a79]">
+                    <Users className="mx-auto mb-2 h-7 w-7 text-[#8bb6a9]" aria-hidden="true" /><p className="text-sm font-semibold">{searchQuery.trim() ? 'Không tìm thấy bạn bè phù hợp.' : 'Bạn chưa có bạn bè nào.'}</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-[#24272c]">
+                  <div className="divide-y divide-[#e2ebe8]">
                     {groupedFriends.map((group) => (
                       <div key={group.letter} className="py-2 first:pt-0 last:pb-0">
                         {/* Alphabet Section Header (A, B, C...) */}
-                        <div className="py-1.5 text-xs font-extrabold text-gray-400 tracking-wider">
+                        <div className="rounded-lg bg-[#e2f1eb] px-3 py-1.5 text-xs font-extrabold text-[#306b63] tracking-wider">
                           {group.letter}
                         </div>
 
@@ -374,20 +305,20 @@ export default function FriendListPage({
                           {group.items.map((friend) => (
                             <div
                               key={friend.id || friend.userId}
-                              className="group relative flex items-center justify-between rounded-xl px-3 py-2.5 hover:bg-[#23262c] transition-colors"
+                              className="group relative flex items-center justify-between border-b border-[#e2ebe8] px-3 py-2.5 hover:bg-[#f0f8f5] transition-colors last:border-0"
                             >
                               {/* Left: Avatar + Name */}
-                              <div
+                              <button type="button"
                                 onClick={() => handleStartChat(friend)}
-                                className="flex flex-1 items-center gap-3.5 cursor-pointer"
+                                className="flex min-w-0 flex-1 items-center gap-3.5 rounded-lg text-left focus-visible:outline-2 focus-visible:outline-[#3e8077]"
                               >
                                 <Avatar src={friend.avatar} name={friend.fullName} size="md" />
 
                                 <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold text-white group-hover:text-[#60a5fa] transition-colors">
+                                  <div className="truncate text-sm font-semibold text-[#233531] group-hover:text-[#306b63] transition-colors">
                                     {friend.fullName}
                                   </div>
-                                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                                  <div className="flex items-center gap-2 text-xs text-[#647a79]">
                                     <span>@{friend.username}</span>
                                     {friend.email && (
                                       <>
@@ -399,10 +330,11 @@ export default function FriendListPage({
                                     )}
                                   </div>
                                 </div>
-                              </div>
+                              </button>
 
                               {/* Right: Actions menu `...` button */}
-                              <div className="relative">
+                              <div className="relative flex shrink-0 items-center gap-1">
+                                <button type="button" onClick={() => handleStartChat(friend)} aria-label={`Nhắn tin cho ${friend.fullName}`} className="flex h-10 w-10 items-center justify-center rounded-lg text-[#3e8077] hover:bg-[#e2f1eb] focus-visible:outline-2 focus-visible:outline-[#3e8077]"><MessageSquare className="h-4 w-4" /></button>
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -410,7 +342,7 @@ export default function FriendListPage({
                                       activeActionMenuId === friend.id ? null : friend.id
                                     )
                                   }
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-[#2e3138] hover:text-white transition-colors"
+                                  className="flex h-10 w-10 items-center justify-center rounded-lg text-[#647a79] hover:bg-[#e2f1eb] hover:text-[#306b63] focus-visible:outline-2 focus-visible:outline-[#3e8077] transition-colors"
                                   aria-label="Tùy chọn"
                                 >
                                   <MoreHorizontal className="h-4 w-4" />
@@ -420,7 +352,7 @@ export default function FriendListPage({
                                 {activeActionMenuId === friend.id && (
                                   <div
                                     onMouseLeave={() => setActiveActionMenuId(null)}
-                                    className="absolute right-0 top-9 z-30 w-44 rounded-xl border border-[#33373f] bg-[#22252b] py-1.5 shadow-2xl"
+                                    className="absolute right-0 top-11 z-30 w-44 rounded-xl border border-[#dce9e5] bg-white py-1.5 shadow-lg"
                                   >
                                     <button
                                       type="button"
@@ -428,9 +360,9 @@ export default function FriendListPage({
                                         setActiveActionMenuId(null);
                                         handleStartChat(friend);
                                       }}
-                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-gray-200 hover:bg-[#2d3139] hover:text-white"
+                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-[#233531] hover:bg-[#f0f8f5] hover:text-[#233531]"
                                     >
-                                      <MessageSquare className="h-3.5 w-3.5 text-[#0068ff]" />
+                                      <MessageSquare className="h-3.5 w-3.5 text-[#3e8077]" />
                                       <span>Nhắn tin</span>
                                     </button>
 
@@ -440,18 +372,18 @@ export default function FriendListPage({
                                         setActiveActionMenuId(null);
                                         navigate('/dashboard');
                                       }}
-                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-gray-200 hover:bg-[#2d3139] hover:text-white"
+                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-[#233531] hover:bg-[#f0f8f5] hover:text-[#233531]"
                                     >
                                       <Video className="h-3.5 w-3.5 text-emerald-400" />
                                       <span>Gọi video</span>
                                     </button>
 
-                                    <div className="my-1 border-t border-[#2e3138]" />
+                                    <div className="my-1 border-t border-[#dce9e5]" />
 
                                     <button
                                       type="button"
                                       onClick={() => handleUnfriend(friend)}
-                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-rose-400 hover:bg-rose-950/40 hover:text-rose-300"
+                                      className="flex w-full items-center gap-2 px-3.5 py-2 text-left text-xs font-semibold text-[#a34e40] hover:bg-[#fff4f1] hover:text-[#a34e40]"
                                     >
                                       <UserX className="h-3.5 w-3.5" />
                                       <span>Hủy kết bạn</span>
@@ -474,14 +406,14 @@ export default function FriendListPage({
           {activeTab === 'requests' && (
             <div className="space-y-4">
               {/* Sub-tabs for requests */}
-              <div className="flex gap-2 border-b border-[#282a2e] pb-3">
+              <div className="flex gap-2 border-b border-[#dce9e5] pb-3">
                 <button
                   type="button"
                   onClick={() => setRequestSubTab('received')}
                   className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition-all ${
                     requestSubTab === 'received'
-                      ? 'bg-[#0068ff] text-white shadow-sm'
-                      : 'text-gray-400 hover:bg-[#202226] hover:text-white'
+                      ? 'bg-[#3e8077] text-[#233531] shadow-sm'
+                      : 'text-[#647a79] hover:bg-white hover:text-[#233531]'
                   }`}
                 >
                   <Inbox className="h-3.5 w-3.5" />
@@ -496,8 +428,8 @@ export default function FriendListPage({
                   onClick={() => setRequestSubTab('sent')}
                   className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-bold transition-all ${
                     requestSubTab === 'sent'
-                      ? 'bg-[#0068ff] text-white shadow-sm'
-                      : 'text-gray-400 hover:bg-[#202226] hover:text-white'
+                      ? 'bg-[#3e8077] text-[#233531] shadow-sm'
+                      : 'text-[#647a79] hover:bg-white hover:text-[#233531]'
                   }`}
                 >
                   <Send className="h-3.5 w-3.5" />
@@ -510,31 +442,31 @@ export default function FriendListPage({
 
               {/* Sub-tab: Received Requests */}
               {requestSubTab === 'received' && (
-                <div className="rounded-2xl border border-[#23252a] bg-[#1a1c20] p-4">
+                <div className="rounded-2xl border border-[#dce9e5] bg-white p-4">
                   {loadingRequests ? (
-                    <div className="py-16 text-center text-xs text-gray-400">
+                    <div className="py-16 text-center text-xs text-[#647a79]">
                       Đang tải lời mời kết bạn…
                     </div>
                   ) : receivedRequests.length === 0 ? (
-                    <div className="py-16 text-center text-gray-400">
-                      <Inbox className="mx-auto h-8 w-8 text-gray-600 mb-2" />
-                      <p className="text-sm font-semibold">No data</p>
+                    <div className="py-16 text-center text-[#647a79]">
+                      <Inbox className="mx-auto h-8 w-8 text-[#8aa59b] mb-2" />
+                      <p className="text-sm font-semibold">Chưa có dữ liệu</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {receivedRequests.map((req) => (
                         <div
                           key={req.id}
-                          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#282b31] bg-[#202328] p-4 transition-colors hover:border-[#343840]"
+                          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#dce9e5] bg-white p-4 transition-colors hover:border-[#343840]"
                         >
                           {/* Sender Info */}
                           <div className="flex items-center gap-3.5">
                             <Avatar src={req.sender.avatar} name={req.sender.fullName} size="lg" />
                             <div>
-                              <h4 className="text-sm font-bold text-white">
+                              <h4 className="text-sm font-bold text-[#233531]">
                                 {req.sender.fullName}
                               </h4>
-                              <div className="flex items-center gap-2 text-xs text-gray-400">
+                              <div className="flex items-center gap-2 text-xs text-[#647a79]">
                                 <span>@{req.sender.username}</span>
                                 {req.sender.email && (
                                   <>
@@ -543,7 +475,7 @@ export default function FriendListPage({
                                   </>
                                 )}
                               </div>
-                              <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
+                              <div className="mt-1 flex items-center gap-1 text-[11px] text-[#647a79]">
                                 <Clock className="h-3 w-3" />
                                 <span>
                                   {new Date(req.createdAt).toLocaleDateString('vi-VN')}
@@ -560,9 +492,9 @@ export default function FriendListPage({
                               onClick={() =>
                                 handleRejectRequest(req.id, req.sender.fullName)
                               }
-                              className="flex items-center gap-1.5 rounded-xl border border-[#3b3f47] bg-[#282b32] px-4 py-2 text-xs font-bold text-gray-300 hover:bg-[#343842] hover:text-white transition-colors"
+                              className="flex items-center gap-1.5 rounded-xl border border-[#3b3f47] bg-white px-4 py-2 text-xs font-bold text-[#647a79] hover:bg-[#343842] hover:text-[#233531] transition-colors"
                             >
-                              <X className="h-3.5 w-3.5 text-rose-400" />
+                              <X className="h-3.5 w-3.5 text-[#a34e40]" />
                               <span>Từ chối</span>
                             </button>
 
@@ -572,7 +504,7 @@ export default function FriendListPage({
                               onClick={() =>
                                 handleAcceptRequest(req.id, req.sender.fullName)
                               }
-                              className="flex items-center gap-1.5 rounded-xl bg-[#0068ff] px-4 py-2 text-xs font-bold text-white hover:bg-[#0057d9] transition-colors shadow-sm shadow-[#0068ff]/30"
+                              className="flex items-center gap-1.5 rounded-xl bg-[#3e8077] px-4 py-2 text-xs font-bold text-white hover:bg-[#306b63] transition-colors shadow-sm shadow-[#3e8077]/15"
                             >
                               <Check className="h-3.5 w-3.5" />
                               <span>Đồng ý</span>
@@ -587,26 +519,26 @@ export default function FriendListPage({
 
               {/* Sub-tab: Sent Requests */}
               {requestSubTab === 'sent' && (
-                <div className="rounded-2xl border border-[#23252a] bg-[#1a1c20] p-4">
+                <div className="rounded-2xl border border-[#dce9e5] bg-white p-4">
                   {sentRequests.length === 0 ? (
-                    <div className="py-16 text-center text-gray-400">
-                      <Send className="mx-auto h-8 w-8 text-gray-600 mb-2" />
-                      <p className="text-sm font-semibold">No data</p>
+                    <div className="py-16 text-center text-[#647a79]">
+                      <Send className="mx-auto h-8 w-8 text-[#8aa59b] mb-2" />
+                      <p className="text-sm font-semibold">Chưa có dữ liệu</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {sentRequests.map((req) => (
                         <div
                           key={req.id}
-                          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#282b31] bg-[#202328] p-4 transition-colors hover:border-[#343840]"
+                          className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#dce9e5] bg-white p-4 transition-colors hover:border-[#343840]"
                         >
                           <div className="flex items-center gap-3.5">
                             <Avatar src={req.receiver.avatar} name={req.receiver.fullName} size="lg" />
                             <div>
-                              <h4 className="text-sm font-bold text-white">
+                              <h4 className="text-sm font-bold text-[#233531]">
                                 {req.receiver.fullName}
                               </h4>
-                              <div className="flex items-center gap-2 text-xs text-gray-400">
+                              <div className="flex items-center gap-2 text-xs text-[#647a79]">
                                 <span>@{req.receiver.username}</span>
                                 {req.receiver.email && (
                                   <>
@@ -615,7 +547,7 @@ export default function FriendListPage({
                                   </>
                                 )}
                               </div>
-                              <div className="mt-1 flex items-center gap-1 text-[11px] text-gray-500">
+                              <div className="mt-1 flex items-center gap-1 text-[11px] text-[#647a79]">
                                 <Clock className="h-3 w-3" />
                                 <span>
                                   Đã gửi ngày{' '}
@@ -632,7 +564,7 @@ export default function FriendListPage({
                               onClick={() =>
                                 handleCancelSentRequest(req.id, req.receiver.fullName)
                               }
-                              className="flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-rose-950/20 px-4 py-2 text-xs font-bold text-rose-300 hover:bg-rose-950/50 transition-colors"
+                              className="flex items-center gap-1.5 rounded-xl border border-rose-500/30 bg-[#fff4f1] px-4 py-2 text-xs font-bold text-[#a34e40] hover:bg-[#fee9e3] transition-colors"
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
                               <span>Thu hồi lời mời</span>
@@ -658,6 +590,9 @@ export default function FriendListPage({
           loadRequests();
         }}
       />
-    </AppLayout>
+    </>
   );
 }
+
+
+

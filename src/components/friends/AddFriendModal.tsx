@@ -7,6 +7,8 @@ import {
   Check,
   UserPlus,
   LoaderCircle,
+  AtSign,
+  Mail,
   UserCheck,
 } from 'lucide-react';
 import { friendApi, type FriendUser } from '../../services/friendApi';
@@ -24,6 +26,7 @@ export default function AddFriendModal({
   onFriendAdded,
 }: AddFriendModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchMode, setSearchMode] = useState<'all' | 'email' | 'username'>('all');
   const [suggestions, setSuggestions] = useState<FriendUser[]>([]);
   const [searchResults, setSearchResults] = useState<FriendUser[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -128,18 +131,17 @@ export default function AddFriendModal({
           transition={{ duration: 0.2 }}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="add-friend-title"
-          className="relative z-10 flex max-h-[calc(100dvh-24px)] w-full max-w-[600px] flex-col overflow-hidden rounded-[20px] border border-[#dce9e5] bg-white text-[#233531] shadow-2xl"
+          className="relative z-10 w-full max-w-[490px] overflow-hidden rounded-2xl border border-[#32363e] bg-[#20242a] text-[#e1e4ea] shadow-2xl"
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-[#e2ebe8] px-5 py-5 sm:px-7">
-            <div><h2 id="add-friend-title" className="text-lg font-bold text-[#233531]">
+          <div className="flex items-center justify-between border-b border-[#2e333b] px-6 py-4">
+            <h2 className="text-base font-bold text-white tracking-wide">
               Thêm bạn
-            </h2><p className="mt-1 text-sm text-[#647a79]">Tìm kiếm bằng email hoặc username để gửi lời mời kết bạn.</p></div>
+            </h2>
             <button
               type="button"
               onClick={onClose}
-              className="flex h-11 w-11 items-center justify-center rounded-xl text-[#647a79] hover:bg-[#f2f8f6] focus-visible:outline-2 focus-visible:outline-[#3e8077] transition-colors"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-[#2b3038] hover:text-white transition-colors"
               aria-label="Đóng"
             >
               <X className="h-5 w-5" />
@@ -147,11 +149,37 @@ export default function AddFriendModal({
           </div>
 
           {/* Body */}
-          <div className="min-h-0 overflow-y-auto p-5 sm:p-7">
+          <div className="p-6">
             {/* Search Input Box */}
             <form onSubmit={handleSearch} className="space-y-3">
-              <div className="relative flex h-[52px] items-center rounded-xl border border-[#b7d8ce] bg-[#f8fbfa] px-3.5 transition-all focus-within:border-[#3e8077] focus-within:ring-2 focus-within:ring-[#3e8077]/15">
-                <Search className="h-4 w-4 shrink-0 text-[#647a79]" aria-hidden="true" />
+              <div className="relative flex items-center rounded-xl border border-[#393e48] bg-[#181a1e] px-3.5 py-1.5 focus-within:border-[#0068ff] focus-within:ring-2 focus-within:ring-[#0068ff]/20 transition-all">
+                {/* Search Type Badge */}
+                <div className="flex items-center gap-1.5 border-r border-[#343942] pr-3 text-xs font-semibold text-gray-300">
+                  <span className="flex items-center gap-1 text-[#0068ff]">
+                    {searchMode === 'email' ? (
+                      <Mail className="h-4 w-4" />
+                    ) : searchMode === 'username' ? (
+                      <AtSign className="h-4 w-4" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                  </span>
+                  <select
+                    value={searchMode}
+                    onChange={(e) => setSearchMode(e.target.value as any)}
+                    className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer"
+                  >
+                    <option value="all" className="bg-[#20242a] text-white">
+                      Email / Username
+                    </option>
+                    <option value="email" className="bg-[#20242a] text-white">
+                      Email
+                    </option>
+                    <option value="username" className="bg-[#20242a] text-white">
+                      Username
+                    </option>
+                  </select>
+                </div>
 
                 {/* Input */}
                 <input
@@ -161,10 +189,15 @@ export default function AddFriendModal({
                     setSearchQuery(e.target.value);
                     if (!e.target.value.trim()) setSearchResults(null);
                   }}
-                  placeholder="Nhập email hoặc username..."
-                  onKeyDown={(event) => { if (event.key === 'Enter') void handleSearch(); }}
+                  placeholder={
+                    searchMode === 'email'
+                      ? 'Nhập địa chỉ email...'
+                      : searchMode === 'username'
+                      ? 'Nhập username...'
+                      : 'Nhập email hoặc username...'
+                  }
                   autoFocus
-                  className="w-full bg-transparent px-3 py-2 text-sm text-[#233531] placeholder:text-[#82918c] outline-none"
+                  className="w-full bg-transparent px-3 py-2 text-sm text-white placeholder-gray-500 outline-none"
                 />
 
                 {searchQuery && (
@@ -195,7 +228,7 @@ export default function AddFriendModal({
             )}
 
             {/* Content: Search Results OR Suggestions */}
-            <div className="mt-5 max-h-[300px] overflow-y-auto pr-1">
+            <div className="mt-5 min-h-[220px] max-h-[300px] overflow-y-auto pr-1">
               {searching ? (
                 <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                   <LoaderCircle className="h-7 w-7 animate-spin text-[#0068ff]" />
@@ -293,7 +326,7 @@ export default function AddFriendModal({
                       <LoaderCircle className="h-6 w-6 animate-spin text-[#0068ff]" />
                     </div>
                   ) : suggestions.length === 0 ? (
-                    <p className="py-5 text-center text-sm text-[#647a79]">Chưa có gợi ý kết bạn</p>
+                    <p className="py-6 text-center text-xs text-gray-500">No data</p>
                   ) : (
                     <div className="space-y-3.5">
                       {displayedSuggestions.map((user) => {
@@ -311,7 +344,7 @@ export default function AddFriendModal({
                                 <h4 className="text-sm font-bold text-white">
                                   {user.fullName}
                                 </h4>
-                    <p className="text-xs text-[#647a79]">{user.sourceHint || (user.username ? `@${user.username}` : '')}</p>
+                    <p className="text-xs text-gray-400">{user.sourceHint || 'No data'}</p>
                               </div>
                             </div>
 
@@ -359,11 +392,11 @@ export default function AddFriendModal({
           </div>
 
           {/* Footer - Matching Image 1 (Hủy & Tìm kiếm) */}
-          <div className="flex items-center justify-end gap-3 border-t border-[#dce9e5] bg-white px-6 py-3.5">
+          <div className="flex items-center justify-end gap-3 border-t border-[#2e333b] bg-[#1a1d22] px-6 py-3.5">
             <button
               type="button"
               onClick={onClose}
-              className="min-h-11 rounded-xl border border-[#b7d8ce] bg-white px-5 text-sm font-semibold text-[#306b63] hover:bg-[#f8fbfa] transition-colors"
+              className="rounded-lg bg-[#2e333c] px-5 py-2 text-xs font-bold text-gray-200 hover:bg-[#383d47] hover:text-white transition-colors"
             >
               Hủy
             </button>
@@ -371,7 +404,7 @@ export default function AddFriendModal({
               type="button"
               onClick={() => handleSearch()}
               disabled={!searchQuery.trim() || searching}
-              className="flex min-h-11 items-center gap-1.5 rounded-xl bg-[#3e8077] px-5 text-sm font-bold text-white hover:bg-[#306b63] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 rounded-lg bg-[#0068ff] px-5 py-2 text-xs font-bold text-white hover:bg-[#0057d9] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-[#0068ff]/20"
             >
               {searching ? (
                 <>

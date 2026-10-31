@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronRight, Languages, LogOut, MessageCircle, Settings, UserRound, Users, X } from 'lucide-react';
+import { CheckCircle2, ChevronRight, Inbox, Languages, LogOut, MessageCircle, Settings, UserRound, Users, X } from 'lucide-react';
 import type { CallableContact, Screen } from '../types';
 import { getStoredUser, setStoredUser, type UserDTO } from '../services/apiClient';
 import { authApi } from '../services/authApi';
@@ -17,6 +17,8 @@ import ConversationList from './chat/ConversationList';
 import ChatPanel from './chat/ChatPanel';
 import ConversationInfo from './chat/ConversationInfo';
 import AddFriendModal from './friends/AddFriendModal';
+import FriendListPage from './friends/FriendListPage';
+import { useLocation } from 'react-router-dom';
 import type {
   ChatAttachmentItem,
   ChatConversationItem,
@@ -173,6 +175,7 @@ function validId(value: string): number {
 }
 
 export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreating, callError }: DashboardProps) {
+  const contactsMode = useLocation().pathname === '/friends';
   const currentUserId = getStoredUser()?.userId;
   const [currentUser, setCurrentUser] = useState<UserDTO | null>(() => getStoredUser());
   const [conversations, setConversations] = useState<DashboardConversation[]>([]);
@@ -185,6 +188,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
   const [conversationsError, setConversationsError] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<number>>(new Set());
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
+  const [contactsTab, setContactsTab] = useState<'friends' | 'requests'>('friends');
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const activeIdRef = useRef(activeId);
   const seenEventIds = useRef(new Set<string>());
@@ -607,10 +611,10 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
           {currentUser?.avatar ? <img src={currentUser.avatar} alt="Ảnh đại diện" className="h-full w-full object-cover" /> : <span className="text-[9px] font-bold">{currentUser ? (currentUser.firstName?.[0] || currentUser.username?.[0] || '—').toUpperCase() : 'No data'}</span>}
         </div>
         <div className="mt-4 flex flex-col items-center gap-2">
-          <button type="button" onClick={() => onNavigate('dashboard')} aria-label="Tin nhắn" className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-primary-light text-brand-primary transition hover:bg-brand-primary hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+          <button type="button" onClick={() => onNavigate('dashboard')} aria-label="Tin nhắn" aria-current={!contactsMode ? 'page' : undefined} className={`flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary ${!contactsMode ? 'bg-brand-primary-light text-brand-primary' : ''}`}>
             <MessageCircle className="h-5 w-5" aria-hidden="true" />
           </button>
-          <button type="button" onClick={() => onNavigate('friends')} aria-label="Danh sách bạn bè" className="flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary">
+          <button type="button" onClick={() => onNavigate('friends')} aria-label="Danh sách bạn bè" aria-current={contactsMode ? 'page' : undefined} className={`flex h-11 w-11 items-center justify-center rounded-xl transition hover:bg-brand-primary-light hover:text-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary ${contactsMode ? 'bg-brand-primary-light text-brand-primary' : ''}`}>
             <Users className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
@@ -635,7 +639,33 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
           </button>
         </div>
       </nav>
-      <ConversationList
+      {contactsMode ? (
+        <div className="flex min-w-0 flex-1 flex-col md:flex-row">
+          <aside className="shrink-0 border-b border-[#dce9e5] bg-white px-3 py-3 md:w-[260px] md:border-b-0 md:border-r md:p-4" aria-label="Điều hướng danh bạ">
+            <h2 className="mb-2 hidden text-lg font-bold text-[#233531] md:block">Danh bạ</h2>
+            <nav className="flex gap-2 md:flex-col" aria-label="Mục danh bạ">
+              {([
+                { id: 'friends', label: 'Danh sách bạn bè', icon: Users },
+                { id: 'requests', label: 'Lời mời kết bạn', icon: Inbox },
+              ] as const).map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setContactsTab(id)}
+                  aria-current={contactsTab === id ? 'page' : undefined}
+                  className={`flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3e8077] md:w-full ${contactsTab === id ? 'bg-[#e2f1eb] text-[#306b63]' : 'text-[#647a79] hover:bg-[#f7faf9] hover:text-[#233531]'}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+          <section className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            <FriendListPage activeTab={contactsTab} onNavigate={onNavigate} onLogout={onLogout} />
+          </section>
+        </div>
+      ) : <><ConversationList
         conversations={visibleConversations}
         activeId={activeId}
         searchQuery={searchQuery}
@@ -680,7 +710,7 @@ export default function Dashboard({ onNavigate, onLogout, onStartCall, callCreat
             <h2 className="text-lg font-extrabold text-[#263934]">{loadingConversations ? 'Đang tải cuộc trò chuyện…' : conversationsError || 'No data'}</h2>
           </div>
         </section>
-      )}
+      )}</>}
 
       {(conversationsError || callError) && (
         <div role="alert" className="absolute bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-800 shadow-xl">

@@ -27,7 +27,6 @@ import ProfilePage from './components/profile/ProfilePage';
 import AdminUserListPage from './components/admin/AdminUserListPage';
 import SettingsPage from './components/settings/SettingsPage';
 import NotificationsPage from './components/notifications/NotificationsPage';
-import FriendListPage from './components/friends/FriendListPage';
 import { BrandLogo, Button } from './components/common';
 import { authApi } from './services/authApi';
 import {
@@ -667,9 +666,12 @@ export default function App() {
                   exit={{ opacity: 0, x: -20 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <FriendListPage
+                  <Dashboard
                     onNavigate={handleNavigate}
                     onLogout={handleLogout}
+                    onStartCall={handleStartCall}
+                    callCreating={callCreating}
+                    callError={callError}
                   />
                 </motion.div>
               </ProtectedRoute>
