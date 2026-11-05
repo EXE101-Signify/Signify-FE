@@ -1,19 +1,25 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { VideoCallRecord } from '../services/videoCallApi';
 import { sendWebRtcSignal, subscribeToWebRtcSignals, type WebRtcSignal } from '../services/webrtcSignaling';
 
 export type MediaConnectionState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'failed';
+type MediaErrorKind = 'permission' | 'signaling' | 'ice' | 'remote-track' | 'media';
 
 function iceServers(): RTCIceServer[] {
   const configured = import.meta.env.VITE_WEBRTC_ICE_SERVERS;
-  if (!configured) return [{ urls: 'stun:stun.l.google.com:19302' }];
-  try {
-    const parsed: unknown = JSON.parse(configured);
-    if (Array.isArray(parsed) && parsed.every((entry) => entry && typeof entry === 'object'
-      && (typeof entry.urls === 'string' || (Array.isArray(entry.urls) && entry.urls.every((url: unknown) => typeof url === 'string')))))
-      return parsed as RTCIceServer[];
-  } catch { /* Invalid configuration falls back to public STUN. */ }
+  if (configured) {
+    try {
+      const parsed: unknown = JSON.parse(configured);
+      if (Array.isArray(parsed) && parsed.length > 0 && parsed.every((entry) => entry && typeof entry === 'object'
+        && (typeof entry.urls === 'string' || (Array.isArray(entry.urls) && entry.urls.every((url: unknown) => typeof url === 'string')))))
+        return parsed as RTCIceServer[];
+    } catch { /* Use the safe public STUN fallback. */ }
+  }
   return [{ urls: 'stun:stun.l.google.com:19302' }];
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Lỗi WebRTC không xác định.';
 }
 
 export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined, cameraActive: boolean, micActive: boolean) {
@@ -22,22 +28,47 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const videoSenderRef = useRef<RTCRtpSender | null>(null);
   const cameraEnabledRef = useRef(cameraActive);
   const micEnabledRef = useRef(micActive);
   const [state, setState] = useState<MediaConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<MediaErrorKind | null>(null);
   const [remoteVideoReady, setRemoteVideoReady] = useState(false);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
   cameraEnabledRef.current = cameraActive;
   micEnabledRef.current = micActive;
 
-  useEffect(() => {
-    localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = cameraActive; });
-  }, [cameraActive]);
+  useEffect(() => { localStreamRef.current?.getVideoTracks().forEach((track) => { track.enabled = cameraActive; }); }, [cameraActive]);
+  useEffect(() => { localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = micActive; }); }, [micActive]);
 
-  useEffect(() => {
-    localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = micActive; });
-  }, [micActive]);
+  const switchCamera = useCallback(async () => {
+    const current = localStreamRef.current;
+    if (!current) return;
+    const nextFacing: 'user' | 'environment' = facingMode === 'user' ? 'environment' : 'user';
+    let replacement: MediaStream | null = null;
+    try {
+      replacement = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: nextFacing } }, audio: false });
+      const nextTrack = replacement.getVideoTracks()[0];
+      if (!nextTrack) throw new Error('Không tìm thấy camera để chuyển đổi.');
+      nextTrack.enabled = cameraEnabledRef.current;
+      const previous = current.getVideoTracks()[0];
+      if (videoSenderRef.current) await videoSenderRef.current.replaceTrack(nextTrack);
+      else if (peerConnectionRef.current) videoSenderRef.current = peerConnectionRef.current.addTrack(nextTrack, current);
+      if (previous) {
+        current.removeTrack(previous);
+        previous.stop();
+      }
+      current.addTrack(nextTrack);
+      if (localVideoRef.current) localVideoRef.current.srcObject = current;
+      setFacingMode(nextFacing);
+    } catch (cause) {
+      replacement?.getTracks().forEach((track) => track.stop());
+      setError(`Không thể đổi camera: ${describeError(cause)}`);
+      setErrorKind('media');
+    }
+  }, [facingMode]);
 
   useEffect(() => {
     if (call.status !== 'ACCEPTED') {
@@ -47,113 +78,115 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
     const isCaller = selfId === call.callerId;
     const isReceiver = selfId === call.receiverId;
     if (!selfId || (!isCaller && !isReceiver) || !Number.isSafeInteger(call.id)) {
-      setState('failed');
-      setError('Không xác định được người tham gia cuộc gọi.');
-      return;
+      setState('failed'); setError('Không xác định được người tham gia cuộc gọi.'); setErrorKind('signaling'); return;
     }
 
     let disposed = false;
     let signalingOnline = false;
     let unsubscribe: (() => void) | null = null;
     let readyTimer: ReturnType<typeof setInterval> | null = null;
+    let remoteTrackTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let signalingTimer: ReturnType<typeof setTimeout> | null = null;
     let offerInProgress = false;
+    let localDescriptionPublished = false;
     let incoming = Promise.resolve();
     const remoteIce: RTCIceCandidateInit[] = [];
     const localIce: RTCIceCandidateInit[] = [];
+    let hasRemoteVideo = false;
+    let pc: RTCPeerConnection | null = null;
     const peerId = isCaller ? call.receiverId : call.callerId;
-    setState('connecting');
-    setError(null);
-    setRemoteVideoReady(false);
+    setState('connecting'); setError(null); setErrorKind(null); setRemoteVideoReady(false);
 
     const send = (type: Parameters<typeof sendWebRtcSignal>[1], payload: Record<string, unknown>) =>
-      !disposed && signalingOnline && sendWebRtcSignal(call.id, type, payload);
+      !disposed && call.status === 'ACCEPTED' && pc?.signalingState !== 'closed'
+      && signalingOnline && sendWebRtcSignal(call.id, type, payload);
 
     const stop = () => {
       if (disposed) return;
       disposed = true;
       if (readyTimer) clearInterval(readyTimer);
+      if (remoteTrackTimer) clearTimeout(remoteTrackTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (signalingTimer) clearTimeout(signalingTimer);
       unsubscribe?.();
-      const pc = peerConnectionRef.current;
       if (pc) {
-        pc.ontrack = null;
-        pc.onicecandidate = null;
-        pc.onconnectionstatechange = null;
-        pc.oniceconnectionstatechange = null;
+        pc.ontrack = null; pc.onicecandidate = null; pc.onconnectionstatechange = null; pc.oniceconnectionstatechange = null;
         pc.close();
-        peerConnectionRef.current = null;
       }
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-      remoteStreamRef.current?.getTracks().forEach((track) => {
-        track.onended = null;
-        track.stop();
-      });
-      remoteStreamRef.current = null;
+      if (peerConnectionRef.current === pc) peerConnectionRef.current = null;
+      videoSenderRef.current = null;
+      localStreamRef.current?.getTracks().forEach((track) => track.stop()); localStreamRef.current = null;
+      remoteStreamRef.current?.getTracks().forEach((track) => { track.onended = null; track.stop(); }); remoteStreamRef.current = null;
       if (localVideoRef.current) localVideoRef.current.srcObject = null;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+      localIce.length = 0; remoteIce.length = 0;
     };
 
-    const fail = (message: string) => {
+    const fail = (message: string, kind: MediaErrorKind) => {
       if (disposed) return;
-      stop();
-      setState('failed');
-      setError(message);
-      setRemoteVideoReady(false);
+      stop(); setState('failed'); setError(message); setErrorKind(kind); setRemoteVideoReady(false);
     };
 
     const flushLocalIce = () => {
-      while (localIce.length && signalingOnline && !disposed) {
+      while (localIce.length && !disposed && signalingOnline) {
         if (!send('WEBRTC_ICE_CANDIDATE', localIce[0] as Record<string, unknown>)) break;
         localIce.shift();
       }
     };
-
-    const applyRemoteIce = async (pc: RTCPeerConnection) => {
-      while (remoteIce.length && pc.remoteDescription && !disposed) {
-        await pc.addIceCandidate(remoteIce.shift());
+    const queueLocalIce = (candidate: RTCIceCandidateInit) => { if (localIce.length < 256) localIce.push(candidate); };
+    const applyRemoteIce = async (connection: RTCPeerConnection) => {
+      while (remoteIce.length && connection.remoteDescription && !disposed) {
+        const candidate = remoteIce.shift()!;
+        try { await connection.addIceCandidate(candidate); }
+        catch (cause) {
+          if (candidate.candidate && !disposed) {
+            // A stale/invalid candidate should not tear down a valid peer connection.
+            setError(`Bỏ qua ICE candidate không hợp lệ: ${describeError(cause)}`);
+            setErrorKind('ice');
+          }
+        }
       }
     };
-
     const announceReady = () => {
-      const pc = peerConnectionRef.current;
-      if (isReceiver && pc && !pc.remoteDescription && signalingOnline && !disposed)
-        send('WEBRTC_READY', {});
+      if (isReceiver && pc && !pc.remoteDescription && signalingOnline && !disposed) send('WEBRTC_READY', {});
+    };
+    const publishDescriptionThenIce = (type: 'WEBRTC_OFFER' | 'WEBRTC_ANSWER') => {
+      if (!pc?.localDescription || disposed) return;
+      const sent = send(type, { type: pc.localDescription.type, sdp: pc.localDescription.sdp });
+      if (sent) { localDescriptionPublished = true; flushLocalIce(); }
     };
 
     const handleSignal = async (signal: WebRtcSignal) => {
-      const pc = peerConnectionRef.current;
-      if (!pc || disposed) return;
+      const connection = pc;
+      if (!connection || disposed || connection.signalingState === 'closed') return;
       if (signal.type === 'WEBRTC_READY' && isCaller) {
-        if (pc.remoteDescription || offerInProgress) return;
+        if (connection.remoteDescription || offerInProgress) return;
         offerInProgress = true;
         try {
-          if (!pc.localDescription) {
-            const offer = await pc.createOffer();
+          if (!connection.localDescription) {
+            // Both audio and video senders are present before SDP is created.
+            const offer = await connection.createOffer();
             if (disposed) return;
-            await pc.setLocalDescription(offer);
+            await connection.setLocalDescription(offer);
           }
-          if (!disposed && pc.localDescription?.type === 'offer')
-            send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
-          flushLocalIce();
-        } finally {
-          offerInProgress = false;
-        }
+          publishDescriptionThenIce('WEBRTC_OFFER');
+        } finally { offerInProgress = false; }
       } else if (signal.type === 'WEBRTC_OFFER' && isReceiver) {
-        if (!pc.remoteDescription) {
-          await pc.setRemoteDescription({ type: 'offer', sdp: signal.payload.sdp as string });
-          await applyRemoteIce(pc);
-          const answer = await pc.createAnswer();
+        if (!connection.remoteDescription) {
+          await connection.setRemoteDescription({ type: 'offer', sdp: signal.payload.sdp as string });
+          await applyRemoteIce(connection);
           if (disposed) return;
-          await pc.setLocalDescription(answer);
+          const answer = await connection.createAnswer();
+          if (disposed) return;
+          await connection.setLocalDescription(answer);
           if (readyTimer) clearInterval(readyTimer);
         }
-        if (!disposed && pc.localDescription?.type === 'answer')
-          send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
-        flushLocalIce();
+        publishDescriptionThenIce('WEBRTC_ANSWER');
       } else if (signal.type === 'WEBRTC_ANSWER' && isCaller) {
-        if (pc.signalingState === 'have-local-offer' && !pc.remoteDescription) {
-          await pc.setRemoteDescription({ type: 'answer', sdp: signal.payload.sdp as string });
-          await applyRemoteIce(pc);
+        if (connection.signalingState === 'have-local-offer' && !connection.remoteDescription) {
+          await connection.setRemoteDescription({ type: 'answer', sdp: signal.payload.sdp as string });
+          await applyRemoteIce(connection);
         }
       } else if (signal.type === 'WEBRTC_ICE_CANDIDATE') {
         const candidate: RTCIceCandidateInit = {
@@ -161,67 +194,100 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           sdpMid: signal.payload.sdpMid as string | null,
           sdpMLineIndex: signal.payload.sdpMLineIndex as number | null,
         };
-        if (pc.remoteDescription) await pc.addIceCandidate(candidate);
-        else if (remoteIce.length < 256) remoteIce.push(candidate);
+        if (connection.remoteDescription) {
+          try { await connection.addIceCandidate(candidate); }
+          catch (cause) {
+            if (!disposed) { setError(`Bỏ qua ICE candidate không hợp lệ: ${describeError(cause)}`); setErrorKind('ice'); }
+          }
+        } else if (remoteIce.length < 256) remoteIce.push(candidate);
       }
     };
 
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Trình duyệt không hỗ trợ camera và micro.');
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true });
       if (disposed) { stream.getTracks().forEach((track) => track.stop()); return; }
       localStreamRef.current = stream;
       stream.getVideoTracks().forEach((track) => { track.enabled = cameraEnabledRef.current; });
       stream.getAudioTracks().forEach((track) => { track.enabled = micEnabledRef.current; });
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = new RTCPeerConnection({ iceServers: iceServers() });
+      pc = new RTCPeerConnection({ iceServers: iceServers() });
       peerConnectionRef.current = pc;
-      const remoteStream = new MediaStream();
-      remoteStreamRef.current = remoteStream;
+      const connection = pc;
+      const remoteStream = new MediaStream(); remoteStreamRef.current = remoteStream;
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-      pc.ontrack = (event) => {
-        if (disposed || remoteStream.getTracks().some((track) => track.id === event.track.id)) return;
-        remoteStream.addTrack(event.track);
-        if (event.track.kind === 'video') setRemoteVideoReady(true);
-        event.track.onended = () => {
-          if (!disposed && event.track.kind === 'video') setRemoteVideoReady(false);
-        };
-        void remoteVideoRef.current?.play().catch(() => {});
+      connection.ontrack = (event) => {
+        if (disposed) return;
+        const tracks = event.streams[0]?.getTracks() ?? [event.track];
+        tracks.forEach((track) => { if (!remoteStream.getTracks().some((existing) => existing.id === track.id)) remoteStream.addTrack(track); });
+        if (event.track.kind === 'video') {
+          hasRemoteVideo = true; setRemoteVideoReady(true); if (remoteTrackTimer) clearTimeout(remoteTrackTimer);
+        }
+        event.track.onended = () => { if (!disposed && event.track.kind === 'video') setRemoteVideoReady(false); };
+        const video = remoteVideoRef.current;
+        if (video && video.srcObject !== remoteStream) video.srcObject = remoteStream;
+        void video?.play().catch(() => {});
       };
-      pc.onicecandidate = (event) => {
+      connection.onicecandidate = (event) => {
         if (disposed || !event.candidate) return;
-        const candidate = event.candidate.toJSON();
-        if (!send('WEBRTC_ICE_CANDIDATE', candidate as Record<string, unknown>)) {
-          if (localIce.length < 256) localIce.push(candidate);
+        // Publish SDP first; backend accepts signaling only after call setup, and early ICE can
+        // otherwise overtake the offer/answer and be rejected as a non-active call signal.
+        queueLocalIce(event.candidate.toJSON());
+        if (connection.localDescription && localDescriptionPublished) flushLocalIce();
+      };
+      connection.onconnectionstatechange = () => {
+        if (disposed) return;
+        if (connection.connectionState === 'connected') {
+          setState('connected');
+          if (!hasRemoteVideo && !remoteTrackTimer) remoteTrackTimer = setTimeout(() => {
+            if (!disposed && !hasRemoteVideo) { setError('Đã thiết lập ICE nhưng chưa nhận được video từ người bên kia.'); setErrorKind('remote-track'); }
+          }, 12_000);
+        } else if (connection.connectionState === 'failed') fail('ICE thất bại. Hãy kiểm tra TURN, NAT/firewall và kết nối mạng.', 'ice');
+        else if (connection.connectionState === 'disconnected') {
+          setState('disconnected');
+          if (reconnectTimer) clearTimeout(reconnectTimer);
+          reconnectTimer = setTimeout(() => {
+            if (!disposed && connection.connectionState === 'disconnected') fail('Kết nối ICE không thể tự phục hồi.', 'ice');
+          }, 10_000);
+        } else if (connection.connectionState === 'connecting' || connection.connectionState === 'new') setState('connecting');
+      };
+      connection.oniceconnectionstatechange = () => {
+        if (!disposed && connection.iceConnectionState === 'failed') fail('ICE thất bại. Máy chủ TURN có thể chưa được cấu hình hoặc không truy cập được.', 'ice');
+        else if (connection.iceConnectionState === 'connected' || connection.iceConnectionState === 'completed') {
+          if (reconnectTimer) clearTimeout(reconnectTimer);
         }
       };
-      pc.onconnectionstatechange = () => {
-        if (disposed) return;
-        if (pc.connectionState === 'connected') setState('connected');
-        else if (pc.connectionState === 'failed') fail('Kết nối WebRTC thất bại.');
-        else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') setState('disconnected');
-        else setState('connecting');
-      };
-      pc.oniceconnectionstatechange = () => {
-        if (!disposed && pc.iceConnectionState === 'failed') fail('Không thể kết nối media giữa hai người dùng.');
-      };
-      stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+      stream.getTracks().forEach((track) => {
+        const sender = connection.addTrack(track, stream);
+        if (track.kind === 'video') videoSenderRef.current = sender;
+      });
 
       unsubscribe = subscribeToWebRtcSignals(call.id, peerId, selfId!, (signal) => {
-        incoming = incoming.then(() => handleSignal(signal)).catch(() => fail('Trao đổi tín hiệu WebRTC thất bại.'));
+        incoming = incoming.then(() => handleSignal(signal)).catch((cause) => {
+          if (disposed) return;
+          const candidateError = describeError(cause);
+          fail(`Trao đổi signaling WebRTC thất bại: ${candidateError}`, 'signaling');
+        });
       }, (signalState) => {
         if (disposed) return;
+        const wasOnline = signalingOnline;
         signalingOnline = signalState === 'online';
+        if (!signalingOnline && wasOnline) {
+          setError('Mất kết nối signaling; đang chờ kết nối lại.'); setErrorKind('signaling');
+          if (signalingTimer) clearTimeout(signalingTimer);
+          signalingTimer = setTimeout(() => {
+            if (!disposed && !signalingOnline) fail('Signaling không thể kết nối lại.', 'signaling');
+          }, 20_000);
+        }
         if (signalingOnline) {
-          // subscribeToStomp reports an existing online socket before subscribing this destination.
+          if (signalingTimer) clearTimeout(signalingTimer);
+          setError((current) => current?.startsWith('Mất kết nối signaling') ? null : current);
           queueMicrotask(() => {
             if (disposed) return;
             announceReady();
-            if (isCaller && pc.localDescription?.type === 'offer' && !pc.remoteDescription)
-              send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
-            if (isReceiver && pc.localDescription?.type === 'answer' && pc.connectionState !== 'connected')
-              send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
+            if (isCaller && pc?.localDescription?.type === 'offer' && !pc.remoteDescription) publishDescriptionThenIce('WEBRTC_OFFER');
+            if (isReceiver && pc?.localDescription?.type === 'answer' && pc.connectionState !== 'connected') publishDescriptionThenIce('WEBRTC_ANSWER');
             flushLocalIce();
           });
         }
@@ -229,15 +295,16 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       if (isReceiver) readyTimer = setInterval(announceReady, 2000);
     };
 
-    // Deferring acquisition avoids a duplicate permission request during React StrictMode's setup/cleanup replay.
     void Promise.resolve().then(() => { if (!disposed) return start(); }).catch((cause: unknown) => {
-      fail(cause instanceof Error && cause.name === 'NotAllowedError'
-        ? 'Cần cấp quyền camera và micro để tham gia cuộc gọi.'
-        : cause instanceof Error ? cause.message : 'Không thể mở camera và micro.');
+      fail(cause instanceof Error && (cause.name === 'NotAllowedError' || cause.name === 'PermissionDeniedError')
+        ? 'Bị từ chối quyền camera hoặc micro. Hãy cấp quyền trong trình duyệt rồi thử lại.'
+        : cause instanceof Error && cause.name === 'NotFoundError' ? 'Không tìm thấy camera hoặc micro trên thiết bị.'
+        : `Không thể mở camera/micro: ${describeError(cause)}`,
+      cause instanceof Error && ['NotAllowedError', 'PermissionDeniedError', 'NotFoundError'].includes(cause.name) ? 'permission' : 'media');
     });
     return stop;
   }, [call.id, call.status, call.callerId, call.receiverId, selfId]);
 
   return { localVideoRef, remoteVideoRef, localStreamRef, remoteStreamRef, peerConnectionRef,
-    state, error, remoteVideoReady };
+    state, error, errorKind, remoteVideoReady, switchCamera, facingMode };
 }
