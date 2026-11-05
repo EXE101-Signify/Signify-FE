@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { 
-  PhoneOff, Mic, MicOff, Video, VideoOff, SwitchCamera, Type, Sliders,
+  PhoneOff, Mic, MicOff, Video, VideoOff, Type, Sliders,
   Send, Brain, Clock, HelpCircle, CheckCircle, Languages, AlertCircle 
 } from 'lucide-react';
 import { Contact, Screen, Message } from '../types';
@@ -89,7 +89,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const [textActionBusy, setTextActionBusy] = useState(false);
   const [textActionError, setTextActionError] = useState<string | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
-  const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, errorKind: mediaErrorKind, remoteVideoReady, switchCamera, facingMode } =
+  const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
   // MVP call roles: the receiver signs and the caller views. Only the signer's local camera is sent to AI.
   const aiSource = { videoRef: localVideoRef, streamRef: localStreamRef };
@@ -299,12 +299,9 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
             {mediaError || (call.status !== 'ACCEPTED' ? 'Chờ cuộc gọi được chấp nhận' : 'Đang chờ video từ người bên kia')}
           </div>}
           <div role="status" aria-live="polite" className="absolute right-4 bottom-4 z-20 rounded-lg bg-neutral-900/85 px-3 py-1.5 text-xs text-white">
-            {mediaState === 'connected' ? 'Media đã kết nối' : mediaState === 'failed' ? 'Kết nối thất bại'
-              : mediaState === 'disconnected' ? 'Mất kết nối media' : mediaState === 'connecting' ? 'Đang kết nối media...' : 'Chưa kết nối'}
+            {mediaState === 'connected' ? 'Đã kết nối' : mediaState === 'failed' ? 'Kết nối thất bại'
+              : mediaState === 'disconnected' ? 'Mất kết nối' : mediaState === 'connecting' ? 'Đang kết nối...' : 'Chưa kết nối'}
           </div>
-          {mediaError && <div role="alert" className="absolute left-6 right-6 top-24 z-30 rounded-xl border border-rose-400/30 bg-rose-950/90 p-3 text-xs text-rose-100">
-            {mediaErrorKind === 'permission' ? 'Quyền thiết bị: ' : mediaErrorKind === 'signaling' ? 'Signaling: ' : mediaErrorKind === 'ice' ? 'ICE: ' : mediaErrorKind === 'remote-track' ? 'Video từ xa: ' : 'Media: '}{mediaError}
-          </div>}
 
           {/* Floating Subtitle Overlay Card */}
           <div className={`absolute inset-x-8 z-20 flex justify-center ${SUBTITLE_POSITION_CLASSES[subtitleSettings.position]}`}>
@@ -358,16 +355,6 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
               className={`p-3.5 rounded-2xl transition-all cursor-pointer ${cameraActive ? 'bg-neutral-900 hover:bg-neutral-800 text-white' : 'bg-brand-error text-white animate-pulse'}`}
             >
               {cameraActive ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-            </button>
-            <button
-              id="call-switch-camera-btn"
-              type="button"
-              onClick={() => void switchCamera()}
-              aria-label={`Đổi camera ${facingMode === 'user' ? 'sau' : 'trước'}`}
-              title={`Đổi camera ${facingMode === 'user' ? 'sau' : 'trước'}`}
-              className="p-3.5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 text-white transition-all cursor-pointer"
-            >
-              <SwitchCamera className="w-5 h-5" />
             </button>
           </div>
 

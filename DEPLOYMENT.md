@@ -18,10 +18,4 @@ Dokploy's documented API supports `POST /api/application.update` with `applicati
 
 ## WebRTC
 
-The existing client uses Google's public STUN by default. STUN alone cannot relay media and calls across mobile carrier NATs/restrictive firewalls may require TURN. Set the build-time variable `VITE_WEBRTC_ICE_SERVERS` to a JSON array of `RTCIceServer` entries, for example:
-
-```json
-[{"urls":"stun:stun.l.google.com:19302"},{"urls":["turn:turn.example.com:3478?transport=udp","turns:turn.example.com:5349?transport=tcp"],"username":"<short-lived-username>","credential":"<short-lived-credential>"}]
-```
-
-Vite embeds all `VITE_*` values in downloadable frontend code. Do not put a TURN shared secret or permanent credentials in the repository, GitHub variables, Docker build args, or this JSON. Configure the TURN provider with a server-side secret and issue temporary credentials, preferably through an authenticated backend endpoint; pass only the expiring username/credential to the browser. Allow TURN UDP plus TLS/TCP fallback and open the provider's relay port range. Build-time configuration must be supplied to the frontend image build/workflow; changing only the Dokploy container runtime environment does not alter an already-built Vite bundle. Calls are peer-to-peer and require a real TURN service plus two devices/networks to verify NAT traversal.
+The existing client uses public STUN by default. Calls across restrictive NATs may require a TURN service. `VITE_WEBRTC_ICE_SERVERS` can configure public ICE details at build time, but any credentials in it are visible to browser users. Use short-lived TURN credentials if a TURN service is added.
