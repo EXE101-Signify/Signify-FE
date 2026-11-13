@@ -12,6 +12,9 @@ import { sendAiTextCommand, type AiTextCommand } from '../services/aiTextApi';
 import type { AiPredictionEvent } from '../services/aiPrediction';
 import { useWebRtcCall } from '../hooks/useWebRtcCall';
 import { useAiFrameCapture } from '../hooks/useAiFrameCapture';
+import { type VslWordEvent } from '../services/vslWord';
+import { startAutomaticVslCapture, type VslCaptureStatus } from '../services/automaticVslCapture';
+import { GlossSequenceBuffer } from '../services/glossSequenceBuffer';
 import {
   DEFAULT_SUBTITLE_SETTINGS,
   loadSubtitleSettings,
@@ -66,6 +69,10 @@ const SUBTITLE_PREVIEW_POSITION_CLASSES: Record<SubtitlePosition, string> = {
   bottom: 'bottom-2',
 };
 
+const configuredVslClipMs = Number(import.meta.env.VITE_VSL_CLIP_MS);
+const VSL_CLIP_MS = Number.isFinite(configuredVslClipMs) && configuredVslClipMs >= 1000 && configuredVslClipMs <= 5000
+  ? configuredVslClipMs : 2500;
+
 export default function VideoCall({ contact, callId, call, role, onCallUpdated, onEndCall }: VideoCallProps) {
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(true);
@@ -89,15 +96,23 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const [textActionBusy, setTextActionBusy] = useState(false);
   const [textActionError, setTextActionError] = useState<string | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
+  const [recognitionMode, setRecognitionMode] = useState<'ALPHABET' | 'VSL_WORDS'>('ALPHABET');
+  const [vslWord, setVslWord] = useState<VslWordEvent | null>(null);
+  const [vslGlosses, setVslGlosses] = useState<string[]>([]);
+  const [vslStatus, setVslStatus] = useState<VslCaptureStatus>('Ready');
+  const [vslGap, setVslGap] = useState<string | null>(null);
+  const glossBuffer = useRef(new GlossSequenceBuffer());
   const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
   // MVP call roles: the receiver signs and the caller views. Only the signer's local camera is sent to AI.
   const aiSource = { videoRef: localVideoRef, streamRef: localStreamRef };
   const aiCaptureActive = role === 'SIGNER' && call.status === 'ACCEPTED'
     && mediaState === 'connected' && localVideoReady && remoteVideoReady && cameraActive;
+  const vslCaptureActive = role === 'SIGNER' && call.status === 'ACCEPTED'
+    && mediaState === 'connected' && localVideoReady && cameraActive;
   const { unavailable: aiUnavailable } = useAiFrameCapture({
     callId,
-    active: aiCaptureActive,
+    active: aiCaptureActive && recognitionMode === 'ALPHABET',
     ...aiSource,
   });
 
@@ -125,6 +140,10 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
 
   useEffect(() => {
     setLatestPrediction(null);
+    setVslWord(null);
+    setVslGlosses([]);
+    setVslGap(null);
+    glossBuffer.current = new GlossSequenceBuffer();
     setAiText(null);
     setTextActionError(null);
     if (call.status !== 'ACCEPTED' || !Number.isSafeInteger(callId) || callId <= 0) {
@@ -138,12 +157,36 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       setLatestPrediction(prediction);
     }, (update) => {
       if (active) setAiText(update.text);
-    }, setAiConnectionState);
+    }, setAiConnectionState, (word) => {
+      if (!active) return;
+      const accepted = glossBuffer.current.accept(word);
+      if (word.status === 'NO_SIGN') { setVslStatus('No Sign'); return; }
+      if (!accepted) return;
+      setVslWord(word);
+      setVslGlosses(glossBuffer.current.rawGlosses);
+      setRecognitionMode('VSL_WORDS');
+    }, (gap) => {
+      if (active) setVslGap(`Thiếu đoạn #${gap.sequenceNumber}–${gap.throughSequenceNumber}`);
+    });
     return () => {
       active = false;
       unsubscribe();
     };
   }, [callId, call.status]);
+
+  useEffect(() => {
+    if (!vslCaptureActive || recognitionMode !== 'VSL_WORDS') return;
+    return startAutomaticVslCapture({
+      callId, getStream: () => localStreamRef.current, onStatus: setVslStatus, clipMs: VSL_CLIP_MS,
+      onGap: (gap) => setVslGap(`Thiếu đoạn #${gap.sequenceNumber}: ${gap.reason}`),
+      onResult: (word) => {
+        const accepted = glossBuffer.current.accept(word);
+        if (word.status === 'NO_SIGN') return;
+        if (accepted) { setVslWord(word); setVslGlosses(glossBuffer.current.rawGlosses); }
+      },
+      onMetrics: (metrics) => { if (import.meta.env.DEV) console.debug('[VSL] capture metrics', metrics); },
+    });
+  }, [vslCaptureActive, recognitionMode, callId, localStreamRef]);
 
   const performTextAction = async (command: AiTextCommand) => {
     if (role !== 'SIGNER' || call.status !== 'ACCEPTED' || textActionBusy) return;
@@ -281,11 +324,30 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
         {/* Remote participant media */}
         <div id="call-video-grid" className="my-4 flex-1 bg-neutral-950 rounded-[24px] overflow-hidden relative border border-white/5 shadow-2xl flex items-center justify-center min-h-[460px]">
           <div id="ai-sign-prediction" aria-live="polite" className="absolute left-6 top-6 z-20 rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md">
-            <span className="block text-[10px] font-bold tracking-widest text-brand-secondary">AI SIGN</span>
-            <span className="block text-2xl font-black">{latestPrediction?.letter ?? '—'}</span>
-            <span className="block text-[10px] text-neutral-300">{latestPrediction ? `Confidence: ${Math.round(latestPrediction.confidence * 100)}%` : 'Đang chờ nhận diện'}</span>
-            {aiUnavailable && <span className="block text-[10px] text-amber-300">AI tạm thời không khả dụng</span>}
-            {latestPrediction && aiConnectionState === 'offline' && <span className="block text-[10px] text-amber-300">AI tạm ngắt kết nối</span>}
+            {role === 'SIGNER' && <select aria-label="Chế độ nhận dạng" value={recognitionMode}
+              onChange={(event) => {
+                setVslWord(null);
+                setVslGlosses([]);
+                setVslGap(null);
+                glossBuffer.current = new GlossSequenceBuffer();
+                setVslStatus('Ready');
+                setRecognitionMode(event.target.value as 'ALPHABET' | 'VSL_WORDS');
+              }}
+              className="mb-2 rounded bg-neutral-800 px-2 py-1 text-xs text-white">
+              <option value="ALPHABET">Chữ cái</option>
+              <option value="VSL_WORDS">Từ VSL</option>
+            </select>}
+            <span className="block text-[10px] font-bold tracking-widest text-brand-secondary">{recognitionMode === 'ALPHABET' ? 'AI SIGN' : 'VSL WORD'}</span>
+            <span className="block text-2xl font-black">{recognitionMode === 'ALPHABET' ? (latestPrediction?.letter ?? '—') : (vslWord?.action ?? '—')}</span>
+            <span className="block text-[10px] text-neutral-300">{recognitionMode === 'ALPHABET'
+              ? (latestPrediction ? `Confidence: ${Math.round(latestPrediction.confidence * 100)}%` : 'Đang chờ nhận diện')
+              : (aiConnectionState !== 'online' ? 'Connecting' : `${vslStatus}${vslWord ? ` · FINAL ${Math.round(vslWord.confidence * 100)}%` : ''}`)}</span>
+            {role === 'SIGNER' && recognitionMode === 'VSL_WORDS' && <span className="mt-2 block text-xs text-neutral-300">
+              {vslCaptureActive ? `Tự động ghi clip VSL ${VSL_CLIP_MS / 1000} giây` : 'Đang chờ camera và cuộc gọi'}
+            </span>}
+            {recognitionMode === 'VSL_WORDS' && vslGap && <span className="mt-1 block text-xs text-amber-300">{vslGap}</span>}
+            {recognitionMode === 'ALPHABET' && aiUnavailable && <span className="block text-[10px] text-amber-300">AI tạm thời không khả dụng</span>}
+            {recognitionMode === 'ALPHABET' && latestPrediction && aiConnectionState === 'offline' && <span className="block text-[10px] text-amber-300">AI tạm ngắt kết nối</span>}
           </div>
           
           <video
@@ -307,8 +369,11 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
           <div className={`absolute inset-x-8 z-20 flex justify-center ${SUBTITLE_POSITION_CLASSES[subtitleSettings.position]}`}>
             <div style={subtitleBackgroundStyle} className="max-w-lg border border-white/10 px-6 py-4 text-center shadow-2xl backdrop-blur-md">
               <p style={subtitleTextAppearance} className="font-extrabold tracking-wide leading-relaxed whitespace-pre-wrap">
-                "{call.status === 'ACCEPTED' ? (aiText !== null ? (aiText || 'Đang chờ nhận diện') : (currentSubtitle || 'Đang chờ nhận diện')) : 'Đang chờ nhận diện'}"
+                "{call.status === 'ACCEPTED' ? (recognitionMode === 'VSL_WORDS' ? (glossBuffer.current.localText || 'Đang chờ ký hiệu') : (aiText !== null ? (aiText || 'Đang chờ nhận diện') : (currentSubtitle || 'Đang chờ nhận diện'))) : 'Đang chờ nhận diện'}"
               </p>
+              {recognitionMode === 'VSL_WORDS' && vslGlosses.length > 0 && <p className="mt-1 text-xs text-neutral-300">
+                Chuỗi gloss: {vslGlosses.join(' ')}
+              </p>}
             </div>
           </div>
 
