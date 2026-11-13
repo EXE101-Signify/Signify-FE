@@ -2,6 +2,7 @@ import { parseAiPrediction, type AiPredictionEvent } from './aiPrediction';
 import { parseAiTextUpdate, type AiTextUpdateEvent } from './aiTextUpdate';
 import { subscribeToStomp, type StompConnectionState } from './stompConnection';
 import { parseVslWord, parseVslGap, type VslWordEvent, type VslGapEvent } from './vslWord';
+import { parseVslStreamingEvent, type VslStreamingEvent } from './vslStreamingEvent';
 
 export type AiConnectionState = StompConnectionState;
 
@@ -12,9 +13,12 @@ export function subscribeToAiCallEvents(
   onStateChange: (state: AiConnectionState) => void,
   onVslWord?: (event: VslWordEvent) => void,
   onVslGap?: (event: VslGapEvent) => void,
+  onVslStreaming?: (event: VslStreamingEvent) => void,
 ): () => void {
   if (!Number.isSafeInteger(callId) || callId <= 0) return () => {};
   return subscribeToStomp(`/user/queue/calls/${callId}`, (body) => {
+    const streaming = parseVslStreamingEvent(body, callId);
+    if (streaming) { onVslStreaming?.(streaming); return; }
     const word = parseVslWord(body, callId);
     if (word) { onVslWord?.(word); return; }
     const gap = parseVslGap(body, callId);
