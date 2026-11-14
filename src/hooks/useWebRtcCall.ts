@@ -12,8 +12,8 @@ function iceServers(): RTCIceServer[] {
     if (Array.isArray(parsed) && parsed.every((entry) => entry && typeof entry === 'object'
       && (typeof entry.urls === 'string' || (Array.isArray(entry.urls) && entry.urls.every((url: unknown) => typeof url === 'string')))))
       return parsed as RTCIceServer[];
-  } catch { /* Invalid configuration falls back to public STUN. */ }
-  return [{ urls: 'stun:stun.l.google.com:19302' }];
+  } catch { /* Report malformed ICE configuration to the caller below. */ }
+  throw new Error('Cấu hình máy chủ ICE không hợp lệ. Vui lòng kiểm tra VITE_WEBRTC_ICE_SERVERS.');
 }
 
 export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined, cameraActive: boolean, micActive: boolean) {
@@ -114,10 +114,15 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       }
     };
 
-    const announceReady = () => {
+    const retrySignaling = () => {
       const pc = peerConnectionRef.current;
-      if (isReceiver && pc && !pc.remoteDescription && signalingOnline && !disposed)
-        send('WEBRTC_READY', {});
+      if (!pc || !signalingOnline || disposed || pc.connectionState === 'connected') return;
+      if (isReceiver && !pc.remoteDescription) send('WEBRTC_READY', {});
+      else if (isCaller && pc.localDescription?.type === 'offer' && !pc.remoteDescription)
+        send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
+      else if (isReceiver && pc.localDescription?.type === 'answer')
+        send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
+      flushLocalIce();
     };
 
     const handleSignal = async (signal: WebRtcSignal) => {
@@ -145,7 +150,6 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           const answer = await pc.createAnswer();
           if (disposed) return;
           await pc.setLocalDescription(answer);
-          if (readyTimer) clearInterval(readyTimer);
         }
         if (!disposed && pc.localDescription?.type === 'answer')
           send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
@@ -175,7 +179,9 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       stream.getAudioTracks().forEach((track) => { track.enabled = micEnabledRef.current; });
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = new RTCPeerConnection({ iceServers: iceServers() });
+      const servers = iceServers();
+      const hasTurn = servers.some((server) => [server.urls].flat().some((url) => /^turns?:/i.test(url)));
+      const pc = new RTCPeerConnection({ iceServers: servers });
       peerConnectionRef.current = pc;
       const remoteStream = new MediaStream();
       remoteStreamRef.current = remoteStream;
@@ -199,12 +205,16 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       pc.onconnectionstatechange = () => {
         if (disposed) return;
         if (pc.connectionState === 'connected') setState('connected');
-        else if (pc.connectionState === 'failed') fail('Kết nối WebRTC thất bại.');
+        else if (pc.connectionState === 'failed') fail(hasTurn
+          ? 'Kết nối WebRTC thất bại. Vui lòng kiểm tra máy chủ TURN.'
+          : 'Không thể kết nối video. Hãy kiểm tra mạng và cấu hình máy chủ TURN.');
         else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') setState('disconnected');
         else setState('connecting');
       };
       pc.oniceconnectionstatechange = () => {
-        if (!disposed && pc.iceConnectionState === 'failed') fail('Không thể kết nối media giữa hai người dùng.');
+        if (!disposed && pc.iceConnectionState === 'failed') fail(hasTurn
+          ? 'Không thể truyền video qua TURN. Vui lòng kiểm tra cấu hình TURN.'
+          : 'Không thể kết nối video. Hãy kiểm tra mạng và cấu hình máy chủ TURN.');
       };
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -217,16 +227,11 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           // subscribeToStomp reports an existing online socket before subscribing this destination.
           queueMicrotask(() => {
             if (disposed) return;
-            announceReady();
-            if (isCaller && pc.localDescription?.type === 'offer' && !pc.remoteDescription)
-              send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
-            if (isReceiver && pc.localDescription?.type === 'answer' && pc.connectionState !== 'connected')
-              send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
-            flushLocalIce();
+            retrySignaling();
           });
         }
       });
-      if (isReceiver) readyTimer = setInterval(announceReady, 2000);
+      readyTimer = setInterval(retrySignaling, 2000);
     };
 
     // Deferring acquisition avoids a duplicate permission request during React StrictMode's setup/cleanup replay.
