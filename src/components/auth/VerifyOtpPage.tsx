@@ -29,6 +29,7 @@ interface OtpRouteState {
     email: string;
     password: string;
     avatarFile?: File | null;
+    isSigner: boolean;
   };
 }
 
@@ -104,6 +105,7 @@ export default function VerifyOtpPage() {
               email: regData.email,
               firstName: regData.firstName,
               lastName: regData.lastName,
+              isSigner: regData.isSigner,
             },
             regData.avatarFile
           );

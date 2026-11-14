@@ -13,6 +13,7 @@ export interface VideoCallRecord {
   conversationId: number;
   callerId: number;
   receiverId: number;
+  signerId: number | null;
   status: VideoCallStatus;
   startedAt: number | null;
   endedAt: number | null;
@@ -23,6 +24,8 @@ async function requireCall(response: { success: boolean; data?: VideoCallRecord 
   const call = response.data;
   if (response.success !== true || !call
     || [call.id, call.conversationId, call.callerId, call.receiverId].some((id) => !Number.isSafeInteger(id) || id <= 0)
+    || (call.signerId !== null && (!Number.isSafeInteger(call.signerId) || call.signerId <= 0
+      || (call.signerId !== call.callerId && call.signerId !== call.receiverId)))
     || !['CALLING', 'ACCEPTED', 'COMPLETED', 'REJECTED', 'MISSED', 'BUSY'].includes(call.status)) {
     throw new Error('Máy chủ không trả về cuộc gọi hợp lệ.');
   }

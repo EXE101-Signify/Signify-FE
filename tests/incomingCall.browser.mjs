@@ -30,7 +30,7 @@ let failed = 0;
 let eventSequence = 0;
 
 const call = { id: 123, conversationId: 456, callerId: 111, receiverId: 222,
-  status: 'CALLING', startedAt: null, endedAt: null, createdAt: 1000 };
+  signerId: 222, status: 'CALLING', startedAt: null, endedAt: null, createdAt: 1000 };
 const event = (overrides = {}) => ({ eventId: `browser-event-${++eventSequence}`,
   type: 'INCOMING_CALL', callId: call.id, conversationId: call.conversationId,
   callerId: call.callerId, receiverId: call.receiverId, status: 'CALLING',
@@ -43,7 +43,8 @@ function installMockBackend(userId, callFixture) {
   localStorage.setItem('signbridge_auth', 'true');
   localStorage.setItem('signbridge_access_token', 'browser-test-token');
   localStorage.setItem('signbridge_refresh_token', 'browser-test-refresh-token');
-  localStorage.setItem('signbridge_user', JSON.stringify({ userId, username: `User ${userId}`, role: 'USER', emailVerified: true }));
+  localStorage.setItem('signbridge_user', JSON.stringify({ userId, username: `User ${userId}`, role: 'USER', emailVerified: true,
+    isSigner: userId === callFixture.signerId }));
   const state = { requests: [], sockets: [], subscriptions: new Map(), mediaRequests: 0,
     peerConnections: [], response: {}, deferred: null, sequence: 0, loginUserId: 333,
     connectTokens: [], maxLiveSockets: 0 };
@@ -71,7 +72,8 @@ function installMockBackend(userId, callFixture) {
     const method = options.method ?? 'GET';
     state.requests.push({ path: url.pathname, method, body: options.body });
     if (url.pathname === '/api/auth/login') return respond({
-      user: { userId: state.loginUserId, username: `User ${state.loginUserId}`, role: 'USER', emailVerified: true },
+      user: { userId: state.loginUserId, username: `User ${state.loginUserId}`, role: 'USER', emailVerified: true,
+        isSigner: state.loginUserId === callFixture.signerId },
       tokens: { accessToken: `browser-test-token-${state.loginUserId}`, refreshToken: 'browser-test-refresh-token',
         tokenType: 'Bearer', accessExpiresAt: Date.now() + 60000, refreshExpiresAt: Date.now() + 600000 },
     });
@@ -90,6 +92,8 @@ function installMockBackend(userId, callFixture) {
       if (status < 400) await window.__mockBackendSend?.('status', result);
       return respond(result, status);
     }
+    if (url.pathname === `/api/calls/${callFixture.id}/recognition-mode` && method === 'GET')
+      return respond({ type: 'AI_RECOGNITION_MODE', callId: callFixture.id, mode: 'ALPHABET', timestamp: 0 });
     if (url.pathname === '/api/conversations') return respond([{
       conversationId: callFixture.conversationId, type: 'PRIVATE', name: null,
       participants: [{ userId: 111, fullName: 'Caller 111', avatar: null, joinedAt: 1000 },

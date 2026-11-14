@@ -3,6 +3,8 @@ import { parseAiTextUpdate, type AiTextUpdateEvent } from './aiTextUpdate';
 import { subscribeToStomp, type StompConnectionState } from './stompConnection';
 import { parseVslWord, parseVslGap, type VslWordEvent, type VslGapEvent } from './vslWord';
 import { parseVslStreamingEvent, type VslStreamingEvent } from './vslStreamingEvent';
+import { parseRecognitionModeUpdate, type RecognitionModeUpdate } from './aiRecognitionMode';
+import { parseCallSpeechEvent, type CallSpeechEvent } from './callSpeech';
 
 export type AiConnectionState = StompConnectionState;
 
@@ -14,9 +16,15 @@ export function subscribeToAiCallEvents(
   onVslWord?: (event: VslWordEvent) => void,
   onVslGap?: (event: VslGapEvent) => void,
   onVslStreaming?: (event: VslStreamingEvent) => void,
+  onRecognitionMode?: (event: RecognitionModeUpdate) => void,
+  onSpeech?: (event: CallSpeechEvent) => void,
 ): () => void {
   if (!Number.isSafeInteger(callId) || callId <= 0) return () => {};
   return subscribeToStomp(`/user/queue/calls/${callId}`, (body) => {
+    const mode = parseRecognitionModeUpdate(body, callId);
+    if (mode) { onRecognitionMode?.(mode); return; }
+    const speech = parseCallSpeechEvent(body, callId);
+    if (speech) { onSpeech?.(speech); return; }
     const streaming = parseVslStreamingEvent(body, callId);
     if (streaming) { onVslStreaming?.(streaming); return; }
     const word = parseVslWord(body, callId);

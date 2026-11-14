@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { 
   PhoneOff, Mic, MicOff, Video, VideoOff, Type, Sliders,
@@ -17,6 +17,9 @@ import { startAutomaticVslCapture, type VslCaptureStatus } from '../services/aut
 import { GlossSequenceBuffer } from '../services/glossSequenceBuffer';
 import { startVslStreaming, type StreamingState } from '../services/vslStreamingClient';
 import type { VslStreamingEvent } from '../services/vslStreamingEvent';
+import { changeRecognitionMode, getRecognitionMode, type RecognitionMode, type RecognitionModeUpdate } from '../services/aiRecognitionMode';
+import type { CallSpeechEvent } from '../services/callSpeech';
+import { useCallStt } from '../hooks/useCallStt';
 import {
   DEFAULT_SUBTITLE_SETTINGS,
   loadSubtitleSettings,
@@ -98,7 +101,10 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const [textActionBusy, setTextActionBusy] = useState(false);
   const [textActionError, setTextActionError] = useState<string | null>(null);
   const [aiConnectionState, setAiConnectionState] = useState<AiConnectionState | 'idle'>('idle');
-  const [recognitionMode, setRecognitionMode] = useState<'ALPHABET' | 'VSL_WORDS' | 'VSL_STREAMING'>('ALPHABET');
+  const [recognitionMode, setRecognitionMode] = useState<RecognitionMode>('ALPHABET');
+  const [modeChangeBusy, setModeChangeBusy] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
+  const modeTimestamp = useRef(0);
   const modeRef = useRef(recognitionMode);
   modeRef.current = recognitionMode;
   const streamingSession = useRef<string | null>(null);
@@ -112,14 +118,18 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const [vslGlosses, setVslGlosses] = useState<string[]>([]);
   const [vslStatus, setVslStatus] = useState<VslCaptureStatus>('Ready');
   const [vslGap, setVslGap] = useState<string | null>(null);
+  const [speechSubtitle, setSpeechSubtitle] = useState<{ text: string; speaker: string } | null>(null);
+  const speechTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seenSpeechIds = useRef(new Set<string>());
   const glossBuffer = useRef(new GlossSequenceBuffer());
   const { localVideoRef, remoteVideoRef, localStreamRef, state: mediaState, error: mediaError, remoteVideoReady } =
     useWebRtcCall(call, getStoredUser()?.userId, cameraActive, micActive);
-  // MVP call roles: the receiver signs and the caller views. Only the signer's local camera is sent to AI.
+  // The selected signer's camera is sent to AI; the account flag controls which tools each user sees.
   const aiSource = { videoRef: localVideoRef, streamRef: localStreamRef };
-  const aiCaptureActive = role === 'SIGNER' && call.status === 'ACCEPTED'
+  const canCaptureSigns = role === 'SIGNER' && call.signerId === getStoredUser()?.userId;
+  const aiCaptureActive = canCaptureSigns && call.status === 'ACCEPTED'
     && mediaState === 'connected' && localVideoReady && remoteVideoReady && cameraActive;
-  const vslCaptureActive = role === 'SIGNER' && call.status === 'ACCEPTED'
+  const vslCaptureActive = canCaptureSigns && call.status === 'ACCEPTED'
     && mediaState === 'connected' && localVideoReady && cameraActive;
   const { unavailable: aiUnavailable } = useAiFrameCapture({
     callId,
@@ -129,9 +139,44 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    if (role === 'VIEWER') console.debug('[AI] capture disabled for viewer');
+    if (!canCaptureSigns) console.debug('[AI] capture disabled for this participant');
     else if (aiCaptureActive) console.debug('[AI] role=SIGNER capture started');
-  }, [role, aiCaptureActive]);
+  }, [canCaptureSigns, aiCaptureActive]);
+
+  const applyModeUpdate = useCallback((update: RecognitionModeUpdate) => {
+    if (update.timestamp < modeTimestamp.current) return;
+    modeTimestamp.current = update.timestamp;
+    if (modeRef.current === update.mode) return;
+    modeRef.current = update.mode;
+    setLatestPrediction(null);
+    setVslWord(null);
+    setVslGlosses([]);
+    setVslGap(null);
+    glossBuffer.current = new GlossSequenceBuffer();
+    setVslStatus('Ready');
+    setStreamingPartial(null);
+    streamingSession.current = null;
+    streamingLastSequence.current = 0;
+    streamingLastFinalSequence.current = 0;
+    setRecognitionMode(update.mode);
+  }, []);
+
+  const handleSpeechEvent = useCallback((event: CallSpeechEvent) => {
+    if (seenSpeechIds.current.has(event.eventId)) return;
+    seenSpeechIds.current.add(event.eventId);
+    const speaker = event.speakerId === getStoredUser()?.userId ? 'Bạn' : contact.name;
+    setSpeechSubtitle({ text: event.text, speaker });
+    setChatLog((current) => [...current, {
+      id: event.eventId, sender: event.speakerId === getStoredUser()?.userId ? 'user' : 'other',
+      senderName: speaker, text: event.text,
+      timestamp: new Date(event.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+    }]);
+    if (speechTimer.current) clearTimeout(speechTimer.current);
+    speechTimer.current = setTimeout(() => setSpeechSubtitle(null), 8000);
+  }, [contact.name]);
+
+  const speech = useCallStt(callId, role === 'VIEWER' && call.status === 'ACCEPTED' && micActive,
+    localStreamRef);
 
   const updateSubtitleSettings = (update: Partial<SubtitleSettings>) => {
     setSubtitleSettings((current) => ({ ...current, ...update }));
@@ -150,6 +195,11 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   }, [subtitleSettings]);
 
   useEffect(() => {
+    modeTimestamp.current = 0;
+    modeRef.current = 'ALPHABET';
+    setRecognitionMode('ALPHABET');
+    setModeError(null);
+    setModeChangeBusy(false);
     setLatestPrediction(null);
     setVslWord(null);
     setVslGlosses([]);
@@ -163,6 +213,9 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
     glossBuffer.current = new GlossSequenceBuffer();
     setAiText(null);
     setTextActionError(null);
+    setSpeechSubtitle(null);
+    seenSpeechIds.current.clear();
+    if (speechTimer.current) clearTimeout(speechTimer.current);
     if (call.status !== 'ACCEPTED' || !Number.isSafeInteger(callId) || callId <= 0) {
       setAiConnectionState('idle');
       return;
@@ -176,19 +229,18 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       if (active) setAiText(update.text);
     }, setAiConnectionState, (word) => {
       if (!active) return;
-      if (modeRef.current === 'VSL_STREAMING') return;
+      if (modeRef.current !== 'VSL_WORDS') return;
       const accepted = glossBuffer.current.accept(word);
       if (word.status === 'NO_SIGN') { setVslStatus('No Sign'); return; }
       if (!accepted) return;
       setVslWord(word);
       setVslGlosses(glossBuffer.current.rawGlosses);
-      setRecognitionMode('VSL_WORDS');
     }, (gap) => {
       if (active) setVslGap(`Thiếu đoạn #${gap.sequenceNumber}–${gap.throughSequenceNumber}`);
     }, (event: VslStreamingEvent) => {
-      if (!active || (role === 'SIGNER' && modeRef.current !== 'VSL_STREAMING')) return;
-      if (role === 'SIGNER' && streamingSession.current !== event.sessionId) return;
-      if (role === 'VIEWER' && streamingSession.current !== event.sessionId) {
+      if (!active || modeRef.current !== 'VSL_STREAMING') return;
+      if (canCaptureSigns && streamingSession.current !== event.sessionId) return;
+      if (!canCaptureSigns && streamingSession.current !== event.sessionId) {
         if (retiredStreamingSessions.current.has(event.sessionId) || event.timestamp <= streamingLastEvent.current) return;
         if (streamingSession.current) retiredStreamingSessions.current.add(streamingSession.current);
         streamingSession.current = event.sessionId;
@@ -204,7 +256,6 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       if (event.status !== 'GAP' && event.status !== 'ERROR') streamingLastEvent.current = event.timestamp;
       if (event.status !== 'GAP' && event.status !== 'ERROR')
         streamingLastSequence.current = Math.max(streamingLastSequence.current, event.sequenceNumber);
-      if (role === 'VIEWER') setRecognitionMode('VSL_STREAMING');
       if (event.status === 'GAP') { setVslGap(`Thiếu frame tại #${event.sequenceNumber}`); return; }
       if (event.status === 'ERROR') { setStreamingState('Error'); return; }
       if (event.status === 'NO_SIGN') {
@@ -226,12 +277,22 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       }
       setStreamingPartial(null);
       setStreamingState('Tracking');
+    }, (update) => {
+      if (active) applyModeUpdate(update);
+    }, (event) => {
+      if (active) handleSpeechEvent(event);
+    });
+    void getRecognitionMode(callId).then((update) => {
+      if (active) applyModeUpdate(update);
+    }).catch((error) => {
+      if (active) setModeError(error instanceof Error ? error.message : 'Không thể tải chế độ nhận dạng.');
     });
     return () => {
       active = false;
       unsubscribe();
+      if (speechTimer.current) clearTimeout(speechTimer.current);
     };
-  }, [callId, call.status, role]);
+  }, [callId, call.status, canCaptureSigns, applyModeUpdate, handleSpeechEvent]);
 
   useEffect(() => {
     if (!vslCaptureActive || recognitionMode !== 'VSL_STREAMING') return;
@@ -242,10 +303,12 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       onFailure: () => {
         streamingSession.current = null;
         setVslGap('Streaming gián đoạn; chuyển sang nhận dạng clip.');
-        setRecognitionMode('VSL_WORDS');
+        void changeRecognitionMode(callId, 'VSL_WORDS').then(applyModeUpdate).catch((error) => {
+          setModeError(error instanceof Error ? error.message : 'Không thể chuyển chế độ nhận dạng.');
+        });
       },
     });
-  }, [vslCaptureActive, recognitionMode, callId, localVideoRef, localStreamRef]);
+  }, [vslCaptureActive, recognitionMode, callId, localVideoRef, localStreamRef, applyModeUpdate]);
 
   useEffect(() => {
     if (!vslCaptureActive || recognitionMode !== 'VSL_WORDS') return;
@@ -262,7 +325,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   }, [vslCaptureActive, recognitionMode, callId, localStreamRef]);
 
   const performTextAction = async (command: AiTextCommand) => {
-    if (role !== 'SIGNER' || call.status !== 'ACCEPTED' || textActionBusy) return;
+    if (!canCaptureSigns || call.status !== 'ACCEPTED' || textActionBusy) return;
     setTextActionBusy(true);
     setTextActionError(null);
     try {
@@ -271,6 +334,19 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
       setTextActionError(error instanceof Error ? error.message : 'Không thể cập nhật văn bản AI.');
     } finally {
       setTextActionBusy(false);
+    }
+  };
+
+  const handleModeChange = async (mode: RecognitionMode) => {
+    if (role !== 'SIGNER' || call.status !== 'ACCEPTED' || modeChangeBusy) return;
+    setModeChangeBusy(true);
+    setModeError(null);
+    try {
+      applyModeUpdate(await changeRecognitionMode(callId, mode));
+    } catch (error) {
+      setModeError(error instanceof Error ? error.message : 'Không thể đổi chế độ nhận dạng.');
+    } finally {
+      setModeChangeBusy(false);
     }
   };
 
@@ -396,25 +472,17 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
 
         {/* Remote participant media */}
         <div id="call-video-grid" className="my-4 flex-1 bg-neutral-950 rounded-[24px] overflow-hidden relative border border-white/5 shadow-2xl flex items-center justify-center min-h-[460px]">
-          <div id="ai-sign-prediction" aria-live="polite" className="absolute left-6 top-6 z-20 rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md">
-            {role === 'SIGNER' && <select aria-label="Chế độ nhận dạng" value={recognitionMode}
-              onChange={(event) => {
-                setVslWord(null);
-                setVslGlosses([]);
-                setVslGap(null);
-                glossBuffer.current = new GlossSequenceBuffer();
-                setVslStatus('Ready');
-                setStreamingPartial(null);
-                streamingSession.current = null;
-                streamingLastSequence.current = 0;
-                streamingLastFinalSequence.current = 0;
-                setRecognitionMode(event.target.value as 'ALPHABET' | 'VSL_WORDS' | 'VSL_STREAMING');
-              }}
-              className="mb-2 rounded bg-neutral-800 px-2 py-1 text-xs text-white">
+          <div id="ai-sign-prediction" aria-live="polite" className="absolute left-3 top-3 z-20 max-w-[calc(100%-1.5rem)] rounded-xl border border-white/10 bg-neutral-900/90 px-4 py-3 text-white shadow-lg backdrop-blur-md sm:left-6 sm:top-6">
+            {role === 'SIGNER' && <label className="mb-3 block text-xs font-semibold text-neutral-200" htmlFor="call-recognition-mode">Chế độ nhận dạng
+              <select id="call-recognition-mode" value={recognitionMode} disabled={call.status !== 'ACCEPTED' || modeChangeBusy}
+                onChange={(event) => { void handleModeChange(event.target.value as RecognitionMode); }}
+                className="mt-1.5 block min-h-10 w-full min-w-48 rounded-lg border border-white/15 bg-neutral-800 px-3 py-2 text-sm text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-secondary disabled:cursor-not-allowed disabled:opacity-60">
               <option value="ALPHABET">Chữ cái</option>
               <option value="VSL_WORDS">Từ VSL</option>
               <option value="VSL_STREAMING">VSL Streaming (thử nghiệm)</option>
-            </select>}
+              </select>
+            </label>}
+            {modeError && <span role="alert" className="mb-2 block max-w-64 text-xs text-amber-300">{modeError}</span>}
             <span className="block text-[10px] font-bold tracking-widest text-brand-secondary">{recognitionMode === 'ALPHABET' ? 'AI SIGN' : recognitionMode === 'VSL_STREAMING' ? 'VSL STREAM' : 'VSL WORD'}</span>
             <span className="block text-2xl font-black">{recognitionMode === 'ALPHABET' ? (latestPrediction?.letter ?? '—') : (streamingPartial ?? vslWord?.action ?? '—')}</span>
             <span className="block text-[10px] text-neutral-300">{recognitionMode === 'ALPHABET'
@@ -422,7 +490,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
               : recognitionMode === 'VSL_STREAMING' ? `${streamingState}${streamingPartial ? ' · PARTIAL' : ''}${vslWord ? ` · FINAL ${Math.round(vslWord.confidence * 100)}%` : ''}`
               : (aiConnectionState !== 'online' ? 'Connecting' : `${vslStatus}${vslWord ? ` · FINAL ${Math.round(vslWord.confidence * 100)}%` : ''}`)}</span>
             {role === 'SIGNER' && recognitionMode === 'VSL_WORDS' && <span className="mt-2 block text-xs text-neutral-300">
-              {vslCaptureActive ? `Tự động ghi clip VSL ${VSL_CLIP_MS / 1000} giây` : 'Đang chờ camera và cuộc gọi'}
+              {canCaptureSigns ? (vslCaptureActive ? `Tự động ghi clip VSL ${VSL_CLIP_MS / 1000} giây` : 'Đang chờ camera và cuộc gọi') : 'Camera nhận dạng ở thiết bị bên kia'}
             </span>}
             {recognitionMode === 'VSL_WORDS' && vslGap && <span className="mt-1 block text-xs text-amber-300">{vslGap}</span>}
             {recognitionMode === 'VSL_STREAMING' && vslGap && <span className="mt-1 block text-xs text-amber-300">{vslGap}</span>}
@@ -448,8 +516,9 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
           {/* Floating Subtitle Overlay Card */}
           <div className={`absolute inset-x-8 z-20 flex justify-center ${SUBTITLE_POSITION_CLASSES[subtitleSettings.position]}`}>
             <div style={subtitleBackgroundStyle} className="max-w-lg border border-white/10 px-6 py-4 text-center shadow-2xl backdrop-blur-md">
+              {speechSubtitle && <p className="mb-1 text-xs font-semibold text-amber-200">{speechSubtitle.speaker}</p>}
               <p style={subtitleTextAppearance} className="font-extrabold tracking-wide leading-relaxed whitespace-pre-wrap">
-                "{call.status === 'ACCEPTED' ? (recognitionMode !== 'ALPHABET' ? (glossBuffer.current.localText || 'Đang chờ ký hiệu') : (aiText !== null ? (aiText || 'Đang chờ nhận diện') : (currentSubtitle || 'Đang chờ nhận diện'))) : 'Đang chờ nhận diện'}"
+                "{speechSubtitle?.text || (call.status === 'ACCEPTED' ? (recognitionMode !== 'ALPHABET' ? (glossBuffer.current.localText || 'Đang chờ ký hiệu') : (aiText !== null ? (aiText || 'Đang chờ nhận diện') : (currentSubtitle || 'Đang chờ nhận diện'))) : 'Đang chờ nhận diện')}"
               </p>
               {recognitionMode === 'VSL_STREAMING' && streamingPartial && <p className="mt-1 text-xs text-amber-200">Tạm thời: {streamingPartial}</p>}
               {recognitionMode !== 'ALPHABET' && vslGlosses.length > 0 && <p className="mt-1 text-xs text-neutral-300">
@@ -504,7 +573,7 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
             </button>
           </div>
 
-          {role === 'SIGNER' && call.status === 'ACCEPTED' && (
+          {canCaptureSigns && call.status === 'ACCEPTED' && (
             <div className="flex flex-wrap items-center gap-2" aria-label="Điều khiển văn bản AI">
               {(['space', 'delete', 'clear'] as const).map((command) => (
                 <button
@@ -518,6 +587,19 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
                 </button>
               ))}
               {textActionError && <span role="alert" className="text-xs text-red-300">{textActionError}</span>}
+            </div>
+          )}
+
+          {role === 'VIEWER' && call.status === 'ACCEPTED' && (
+            <div className="flex min-w-0 flex-col gap-1">
+              <button type="button" id="call-speech-toggle" aria-pressed={speech.listening}
+                disabled={!micActive || !speech.supported || speech.stopping}
+                onClick={() => speech.listening || speech.busy ? speech.stop() : void speech.start()}
+                className={`flex min-h-11 items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-secondary disabled:cursor-not-allowed disabled:opacity-50 ${speech.listening ? 'bg-brand-secondary text-white' : 'bg-neutral-900 text-white hover:bg-neutral-800'}`}>
+                <Mic className="h-4 w-4" />{speech.stopping ? 'Đang hoàn tất câu...' : speech.busy ? 'Hủy kết nối STT' : speech.listening ? 'Dừng chuyển giọng nói' : 'Chuyển giọng nói thành chữ'}
+              </button>
+              {!speech.supported && <span role="status" className="max-w-56 text-xs text-amber-300">Trình duyệt này chưa hỗ trợ thu âm cho STT.</span>}
+              {speech.error && <span role="alert" className="max-w-64 text-xs text-amber-300">{speech.error}</span>}
             </div>
           )}
 

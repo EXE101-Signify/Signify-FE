@@ -34,6 +34,7 @@ export interface UserDTO {
   userId: number;
   username: string;
   role: 'USER' | 'ADMIN';
+  isSigner: boolean;
   emailVerified: boolean;
   email?: string;
   firstName?: string;

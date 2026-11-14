@@ -26,6 +26,7 @@ const calling: VideoCallRecord = {
   conversationId: incoming.conversationId,
   callerId: incoming.callerId,
   receiverId: incoming.receiverId,
+  signerId: incoming.receiverId,
   status: 'CALLING',
   startedAt: null,
   endedAt: null,

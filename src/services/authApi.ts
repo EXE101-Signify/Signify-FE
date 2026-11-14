@@ -26,6 +26,7 @@ export interface RegisterParams {
   email?: string;
   firstName?: string;
   lastName?: string;
+  isSigner: boolean;
 }
 
 export const authApi = {
@@ -68,6 +69,7 @@ export const authApi = {
       email: params.email || undefined,
       firstName: params.firstName || undefined,
       lastName: params.lastName || undefined,
+      isSigner: params.isSigner,
     };
 
     const requestBlob = new Blob([JSON.stringify(requestObj)], {
@@ -137,7 +139,7 @@ export const authApi = {
 
   async updateProfile(profile: {
     email: string; firstName: string; lastName: string; avatar: string;
-    phone: string; gender: boolean | null; address: string;
+    phone: string; gender: boolean | null; address: string; isSigner: boolean;
   }): Promise<ApiResponse<UserDTO>> {
     return apiFetch<UserDTO>('/api/users/profile', {
       method: 'PATCH',

@@ -676,7 +676,7 @@ export default function App() {
                       contact={activeCall.contact}
                       callId={activeCall.call.id}
                       call={activeCall.call}
-                      role={getStoredUser()?.userId === activeCall.call.receiverId ? 'SIGNER' : 'VIEWER'}
+                      role={getStoredUser()?.isSigner ? 'SIGNER' : 'VIEWER'}
                       onCallUpdated={handleCallUpdated}
                       onEndCall={handleEndCall}
                     />

@@ -8,6 +8,7 @@ const backendCall: VideoCallRecord = {
   conversationId: 456,
   callerId: 111,
   receiverId: 222,
+  signerId: 222,
   status: 'CALLING',
   startedAt: null,
   endedAt: null,

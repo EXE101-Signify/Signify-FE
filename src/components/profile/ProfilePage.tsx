@@ -41,11 +41,12 @@ interface ProfileView {
   address: string;
   avatar: string;
   emailVerified: boolean | null;
+  isSigner: boolean;
 }
 
 const EMPTY_PROFILE: ProfileView = {
   id: '', username: '', role: '', firstName: '', lastName: '', email: '', phone: '',
-  gender: null, address: '', avatar: '', emailVerified: null,
+  gender: null, address: '', avatar: '', emailVerified: null, isSigner: false,
 };
 
 function fromUserDto(user: UserDTO): ProfileView {
@@ -62,6 +63,7 @@ function fromUserDto(user: UserDTO): ProfileView {
     address: user.address ?? '',
     avatar: user.avatar ?? '',
     emailVerified: user.emailVerified,
+    isSigner: user.isSigner ?? false,
   };
 }
 
@@ -136,7 +138,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
       const response = await authApi.updateProfile({
         email: draft.email.trim(), firstName: draft.firstName.trim(), lastName: draft.lastName.trim(),
         avatar: draft.avatar.trim(), phone: draft.phone.trim(), gender: draft.gender,
-        address: draft.address.trim(),
+        address: draft.address.trim(), isSigner: draft.isSigner,
       });
       if (!response.data) throw new Error(response.message || 'Không nhận được hồ sơ đã cập nhật.');
       const updated = fromUserDto(response.data);
@@ -185,6 +187,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
             <label className="block"><span className="text-xs font-bold text-[#526a63]">Giới tính</span><select value={draft.gender === null ? '' : String(draft.gender)} onChange={(event) => setDraft({ ...draft, gender: event.target.value === '' ? null : event.target.value === 'true' })} className="mt-2 min-h-11 w-full rounded-xl border border-[#d6e2dd] bg-white px-4 py-3 text-sm outline-none focus:border-[#2f8274]"><option value="">Chưa cập nhật</option><option value="true">Nam</option><option value="false">Nữ</option></select></label>
             <label className="block"><span className="text-xs font-bold text-[#526a63]">Tên đăng nhập</span><input disabled value={draft.username} className="mt-2 min-h-11 w-full rounded-xl border border-[#e2ebe8] bg-[#f2f8f6] px-4 py-3 text-sm text-[#687b80]" /></label>
             <label className="block sm:col-span-2"><span className="text-xs font-bold text-[#526a63]">Địa chỉ</span><textarea rows={3} maxLength={500} value={draft.address} onChange={(event) => setDraft({ ...draft, address: event.target.value })} className="mt-2 w-full resize-y rounded-xl border border-[#d6e2dd] bg-white px-4 py-3 text-sm leading-6 outline-none focus:border-[#2f8274]" /></label>
+            <label className="flex min-h-12 items-start gap-3 rounded-xl border border-[#d6e2dd] bg-[#f8fbfa] p-4 sm:col-span-2"><input type="checkbox" checked={draft.isSigner} onChange={(event) => setDraft({ ...draft, isSigner: event.target.checked })} className="mt-0.5 h-5 w-5 shrink-0 accent-[#2f8274]" /><span><span className="block text-sm font-bold">Tôi sử dụng ngôn ngữ ký hiệu</span><span className="mt-1 block text-xs text-[#526a63]">Bật để chọn mô hình nhận dạng khi gọi video. Tắt để dùng chuyển giọng nói thành chữ.</span></span></label>
             <label className="block sm:col-span-2"><span className="text-xs font-bold text-[#526a63]">URL ảnh đại diện</span><input maxLength={2048} value={draft.avatar} onChange={(event) => setDraft({ ...draft, avatar: event.target.value })} className="mt-2 min-h-11 w-full rounded-xl border border-[#d6e2dd] bg-white px-4 py-3 text-sm outline-none focus:border-[#2f8274]" /><small className="mt-1.5 block text-xs text-[#687b80]">Backend hiện nhận URL ảnh; chưa có API tải ảnh lên.</small></label>
             </div>
             <div className="flex justify-end gap-2 border-t border-[#e2ebe8] pt-4"><button type="button" onClick={() => { setDraft(profile); setEditing(false); setError(null); }} className="min-h-11 rounded-lg border border-[#d6e2dd] px-4 text-sm font-semibold text-[#526a63] hover:bg-[#f2f8f6]">Hủy</button><button type="submit" disabled={saving} className="flex min-h-11 items-center gap-2 rounded-lg bg-[#2f8274] px-4 text-sm font-semibold text-white hover:bg-[#246b60] disabled:opacity-60"><Save className="h-4 w-4" />{saving ? 'Đang lưu...' : 'Lưu thay đổi'}</button></div>
@@ -199,6 +202,7 @@ export default function ProfilePage({ onNavigate, onLogout }: ProfilePageProps) 
                 {icon:<Phone className="h-4 w-4" />, label:'Số điện thoại', value:profile.phone || 'Chưa cập nhật'},
                 {icon:<VenusAndMars className="h-4 w-4" />, label:'Giới tính', value:profile.gender === null ? 'Chưa cập nhật' : genderLabel(profile.gender)},
                 {icon:<MapPin className="h-4 w-4" />, label:'Địa chỉ', value:profile.address || 'Chưa cập nhật'},
+                {icon:<ShieldCheck className="h-4 w-4" />, label:'Ngôn ngữ ký hiệu', value:profile.isSigner ? 'Có sử dụng' : 'Không sử dụng'},
               ].map((item) => <div key={item.label} className="grid min-w-0 grid-cols-[32px_minmax(0,150px)_minmax(0,1fr)] items-center gap-2 py-4 sm:grid-cols-[36px_minmax(0,190px)_minmax(0,1fr)] sm:gap-3"><span className="flex h-8 w-8 items-center justify-center rounded-lg text-[#71847d]">{item.icon}</span><dt className="text-xs font-medium text-[#687b80] sm:text-sm">{item.label}</dt><dd className="min-w-0 break-words text-sm font-semibold text-[#172b2c]">{item.value}</dd></div>)}
               <div className="grid min-w-0 grid-cols-[32px_minmax(0,150px)_minmax(0,1fr)] items-center gap-2 py-4 sm:grid-cols-[36px_minmax(0,190px)_minmax(0,1fr)] sm:gap-3"><span className="flex h-8 w-8 items-center justify-center text-[#71847d]"><ShieldCheck className="h-4 w-4" /></span><dt className="text-xs font-medium text-[#687b80] sm:text-sm">Xác thực email</dt><dd><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${profile.emailVerified ? 'bg-[#e5f4ed] text-[#276650]' : 'bg-[#fff0e8] text-[#98563e]'}`}>{profile.emailVerified === null ? 'Chưa cập nhật' : profile.emailVerified ? 'Đã xác thực' : 'Chưa xác thực'}</span></dd></div>
             </dl>
