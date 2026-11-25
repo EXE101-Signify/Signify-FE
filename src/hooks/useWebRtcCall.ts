@@ -57,6 +57,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
     let unsubscribe: (() => void) | null = null;
     let readyTimer: ReturnType<typeof setInterval> | null = null;
     let offerInProgress = false;
+    let localDescriptionPublished = false;
     let incoming = Promise.resolve();
     const remoteIce: RTCIceCandidateInit[] = [];
     const localIce: RTCIceCandidateInit[] = [];
@@ -66,7 +67,8 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
     setRemoteVideoReady(false);
 
     const send = (type: Parameters<typeof sendWebRtcSignal>[1], payload: Record<string, unknown>) =>
-      !disposed && signalingOnline && sendWebRtcSignal(call.id, type, payload);
+      !disposed && call.status === 'ACCEPTED' && peerConnectionRef.current?.signalingState !== 'closed'
+      && signalingOnline && sendWebRtcSignal(call.id, type, payload);
 
     const stop = () => {
       if (disposed) return;
@@ -110,7 +112,22 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
 
     const applyRemoteIce = async (pc: RTCPeerConnection) => {
       while (remoteIce.length && pc.remoteDescription && !disposed) {
-        await pc.addIceCandidate(remoteIce.shift());
+        const candidate = remoteIce.shift()!;
+        try { await pc.addIceCandidate(candidate); }
+        catch (cause) {
+          // One stale candidate must not destroy the whole peer connection.
+          console.warn('[WebRTC] Ignoring invalid queued ICE candidate', cause);
+        }
+      }
+    };
+
+    const publishDescriptionThenIce = (type: 'WEBRTC_OFFER' | 'WEBRTC_ANSWER') => {
+      const pc = peerConnectionRef.current;
+      if (!pc?.localDescription || disposed) return;
+      const sent = send(type, { type: pc.localDescription.type, sdp: pc.localDescription.sdp });
+      if (sent) {
+        localDescriptionPublished = true;
+        flushLocalIce();
       }
     };
 
@@ -132,9 +149,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
             if (disposed) return;
             await pc.setLocalDescription(offer);
           }
-          if (!disposed && pc.localDescription?.type === 'offer')
-            send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
-          flushLocalIce();
+          publishDescriptionThenIce('WEBRTC_OFFER');
         } finally {
           offerInProgress = false;
         }
@@ -147,9 +162,7 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           await pc.setLocalDescription(answer);
           if (readyTimer) clearInterval(readyTimer);
         }
-        if (!disposed && pc.localDescription?.type === 'answer')
-          send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
-        flushLocalIce();
+        publishDescriptionThenIce('WEBRTC_ANSWER');
       } else if (signal.type === 'WEBRTC_ANSWER' && isCaller) {
         if (pc.signalingState === 'have-local-offer' && !pc.remoteDescription) {
           await pc.setRemoteDescription({ type: 'answer', sdp: signal.payload.sdp as string });
@@ -161,7 +174,10 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
           sdpMid: signal.payload.sdpMid as string | null,
           sdpMLineIndex: signal.payload.sdpMLineIndex as number | null,
         };
-        if (pc.remoteDescription) await pc.addIceCandidate(candidate);
+        if (pc.remoteDescription) {
+          try { await pc.addIceCandidate(candidate); }
+          catch (cause) { console.warn('[WebRTC] Ignoring invalid ICE candidate', cause); }
+        }
         else if (remoteIce.length < 256) remoteIce.push(candidate);
       }
     };
@@ -192,19 +208,21 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
       pc.onicecandidate = (event) => {
         if (disposed || !event.candidate) return;
         const candidate = event.candidate.toJSON();
-        if (!send('WEBRTC_ICE_CANDIDATE', candidate as Record<string, unknown>)) {
+        // ICE may be generated as soon as setLocalDescription resolves. Wait until
+        // the matching offer/answer has been published so the relay sees SDP first.
+        if (!localDescriptionPublished || !send('WEBRTC_ICE_CANDIDATE', candidate as Record<string, unknown>)) {
           if (localIce.length < 256) localIce.push(candidate);
         }
       };
       pc.onconnectionstatechange = () => {
         if (disposed) return;
         if (pc.connectionState === 'connected') setState('connected');
-        else if (pc.connectionState === 'failed') fail('Kết nối WebRTC thất bại.');
+        else if (pc.connectionState === 'failed') fail('ICE không tìm được đường truyền media. Nếu đang gọi qua mạng di động hoặc NAT, cần cấu hình TURN; hãy kiểm tra cả mạng và cấu hình ICE.');
         else if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed') setState('disconnected');
         else setState('connecting');
       };
       pc.oniceconnectionstatechange = () => {
-        if (!disposed && pc.iceConnectionState === 'failed') fail('Không thể kết nối media giữa hai người dùng.');
+        if (!disposed && pc.iceConnectionState === 'failed') fail('ICE thất bại: thiết bị không thiết lập được đường truyền media. STUN mặc định không relay dữ liệu; mạng di động/NAT thường cần TURN.');
       };
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -219,9 +237,9 @@ export function useWebRtcCall(call: VideoCallRecord, selfId: number | undefined,
             if (disposed) return;
             announceReady();
             if (isCaller && pc.localDescription?.type === 'offer' && !pc.remoteDescription)
-              send('WEBRTC_OFFER', { type: 'offer', sdp: pc.localDescription.sdp });
+              publishDescriptionThenIce('WEBRTC_OFFER');
             if (isReceiver && pc.localDescription?.type === 'answer' && pc.connectionState !== 'connected')
-              send('WEBRTC_ANSWER', { type: 'answer', sdp: pc.localDescription.sdp });
+              publishDescriptionThenIce('WEBRTC_ANSWER');
             flushLocalIce();
           });
         }
