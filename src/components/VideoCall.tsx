@@ -12,6 +12,7 @@ import { sendAiTextCommand, type AiTextCommand } from '../services/aiTextApi';
 import type { AiPredictionEvent } from '../services/aiPrediction';
 import { useWebRtcCall } from '../hooks/useWebRtcCall';
 import { useAiFrameCapture } from '../hooks/useAiFrameCapture';
+import type { AiFrameResponse } from '../services/aiFrameApi';
 import { type VslWordEvent } from '../services/vslWord';
 import { startAutomaticVslCapture, type VslCaptureStatus } from '../services/automaticVslCapture';
 import { GlossSequenceBuffer } from '../services/glossSequenceBuffer';
@@ -113,6 +114,17 @@ export default function VideoCall({ contact, callId, call, role, onCallUpdated, 
   const { unavailable: aiUnavailable } = useAiFrameCapture({
     callId,
     active: aiCaptureActive && recognitionMode === 'ALPHABET',
+    onPrediction: (prediction: AiFrameResponse) => {
+      setLatestPrediction({
+        eventId: `local-ai-${prediction.timestamp}`,
+        type: 'AI_SIGN_PREDICTION',
+        conversationId: call.conversationId,
+        callId,
+        letter: prediction.letter,
+        confidence: prediction.confidence,
+        timestamp: prediction.timestamp,
+      });
+    },
     ...aiSource,
   });
 

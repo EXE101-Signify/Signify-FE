@@ -1,18 +1,23 @@
-import { useEffect, useState, type RefObject } from 'react';
-import { sendAiFrame } from '../services/aiFrameApi';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { sendAiFrame, type AiFrameResponse } from '../services/aiFrameApi';
 
 const FRAME_INTERVAL_MS = 200;
-const REQUEST_TIMEOUT_MS = 10000;
+// A single MediaPipe inference can take several seconds on a cold/loaded service.
+// Keep the client timeout above the observed 6–10s no-hand responses.
+const REQUEST_TIMEOUT_MS = 30000;
 
 interface CaptureOptions {
   callId: number;
   active: boolean;
   videoRef: RefObject<HTMLVideoElement | null>;
   streamRef: RefObject<MediaStream | null>;
+  onPrediction?: (prediction: AiFrameResponse) => void;
 }
 
-export function useAiFrameCapture({ callId, active, videoRef, streamRef }: CaptureOptions) {
+export function useAiFrameCapture({ callId, active, videoRef, streamRef, onPrediction }: CaptureOptions) {
   const [unavailable, setUnavailable] = useState(false);
+  const onPredictionRef = useRef(onPrediction);
+  onPredictionRef.current = onPrediction;
 
   useEffect(() => {
     if (!active || !Number.isSafeInteger(callId) || callId <= 0) return;
@@ -72,7 +77,10 @@ export function useAiFrameCapture({ callId, active, videoRef, streamRef }: Captu
           void sendAiFrame(callId, blob, requestController.signal).then((prediction) => {
             if (disposed || captureGeneration !== generation) return;
             setUnavailable(false);
-            if (prediction && import.meta.env.DEV) console.debug(`[AI] Accepted letter: ${prediction.letter} ${prediction.confidence.toFixed(2)}`);
+            if (prediction) onPredictionRef.current?.(prediction);
+            if (prediction && import.meta.env.DEV) {
+              console.debug(`[AI] ${prediction.accepted ? 'Accepted' : 'Candidate'} letter: ${prediction.letter} ${prediction.confidence.toFixed(2)}`);
+            }
           }).catch((error: unknown) => {
             if (disposed || captureGeneration !== generation) return;
             const status = (error as { status?: number })?.status;
